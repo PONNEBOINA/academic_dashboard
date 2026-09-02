@@ -15,19 +15,28 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed. Use GET or POST." });
   }
 
-  // 1. Authenticate with CRON_SECRET via header
-  const cronSecret = process.env.CRON_SECRET;
-  const authHeader = req.headers["authorization"] || "";
-  const customHeader = req.headers["x-cron-secret"] || "";
+  // 1. Authenticate with CRON_SECRET
+  const cronSecret = (process.env.CRON_SECRET || "").trim().replace(/^["']|["']$/g, "");
+  const authHeader = (req.headers["authorization"] || "").trim();
+  const customHeader = (req.headers["x-cron-secret"] || req.headers["cron-secret"] || "").trim();
+  const queryKey = (req.query?.key || req.query?.secret || "").trim();
+
+  // Extract token if 'Bearer ' prefix is present
+  const tokenFromBearer = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : authHeader;
 
   const isAuthorized =
     !cronSecret ||
+    tokenFromBearer === cronSecret ||
     authHeader === `Bearer ${cronSecret}` ||
-    customHeader === cronSecret;
+    customHeader === cronSecret ||
+    queryKey === cronSecret;
 
   if (!isAuthorized) {
     return res.status(401).json({
-      error: "Unauthorized cron access. Provide 'Authorization: Bearer <CRON_SECRET>' header.",
+      error: "Unauthorized cron access.",
+      hint: "Set request header 'Authorization: Bearer <CRON_SECRET>' or URL parameter '?key=<CRON_SECRET>'",
     });
   }
 
