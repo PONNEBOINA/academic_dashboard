@@ -1,77 +1,115 @@
-﻿// api/cron.js
-// Vercel Cron Job — runs every 1 minute (configured in vercel.json)
-// Checks for due reminders, sends Web Push to registered devices,
-// creates dashboard notification records, and marks reminders as processed.
+// api/cron.js
+// Serverless Reminder Scheduler Endpoint
+// Triggered by external cron service (cron-job.org) via secure HTTP header.
+// Checks MongoDB for due reminders, sends Web Push to registered devices,
+// creates dashboard notifications, and prevents duplicate deliveries.
+
 import { getDb } from "./_lib/db.js";
-import webpush from "./_lib/webpush.js";
-import { ObjectId } from "mongodb";
+import { getWebPush } from "./_lib/webpush.js";
 
 export const config = { maxDuration: 30 };
 
 export default async function handler(req, res) {
-  // Protect cron endpoint with a secret header
+  // Allow GET and POST methods
+  if (req.method !== "GET" && req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed. Use GET or POST." });
+  }
+
+  // 1. Authenticate with CRON_SECRET via header
   const cronSecret = process.env.CRON_SECRET;
-  const incoming = req.headers["x-cron-secret"] || req.headers["authorization"];
-  if (cronSecret && incoming !== `Bearer ${cronSecret}`) {
-    return res.status(401).json({ error: "Unauthorized cron access." });
+  const authHeader = req.headers["authorization"] || "";
+  const customHeader = req.headers["x-cron-secret"] || "";
+
+  const isAuthorized =
+    !cronSecret ||
+    authHeader === `Bearer ${cronSecret}` ||
+    customHeader === cronSecret;
+
+  if (!isAuthorized) {
+    return res.status(401).json({
+      error: "Unauthorized cron access. Provide 'Authorization: Bearer <CRON_SECRET>' header.",
+    });
   }
 
   try {
     const db = await getDb();
     const now = new Date();
 
-    // Find all due, uncompleted reminders that have NOT had push sent yet
-    const dueReminders = await db.collection("reminders").find({
-      scheduledDateTime: { $lte: now },
-      completed: false,
-      pushSentAt: null,
-      pushNotification: true,
-    }).toArray();
+    // 2. Query due reminders where notification has not been sent yet
+    const dueReminders = await db
+      .collection("reminders")
+      .find({
+        scheduledDateTime: { $lte: now },
+        completed: false,
+        $or: [
+          { pushSentAt: null, pushNotification: true },
+          { dashboardSeenAt: null, dashboardNotification: true },
+        ],
+      })
+      .toArray();
 
     if (dueReminders.length === 0) {
-      return res.status(200).json({ processed: 0, message: "No due reminders." });
+      return res.status(200).json({
+        success: true,
+        processed: 0,
+        message: "No pending reminders due at this time.",
+        timestamp: now.toISOString(),
+      });
     }
 
-    let processed = 0;
+    let pushSentCount = 0;
+    let notifCreatedCount = 0;
     let errors = 0;
 
     for (const reminder of dueReminders) {
       try {
-        // 1. Get all registered devices for this user
-        const devices = await db.collection("devices").find({ userId: reminder.userId, enabled: true }).toArray();
+        const updateFields = { updatedAt: now };
 
-        // 2. Send Web Push to each registered device
-        const pushPromises = devices.map(async (device) => {
-          const subscription = {
-            endpoint: device.endpoint,
-            keys: device.keys,
-          };
-          const payload = JSON.stringify({
-            title: `🔔 ${reminder.title}`,
-            body: reminder.description || "Your scheduled reminder is due now.",
-            tag: `reminder-${reminder._id.toString()}`,
-            url: "/",
-          });
-          try {
-            await webpush.sendNotification(subscription, payload);
-          } catch (pushErr) {
-            // If the subscription has expired/invalid (410 Gone), remove it
-            if (pushErr.statusCode === 410 || pushErr.statusCode === 404) {
-              console.log(`[CRON] Removing expired device subscription: ${device.endpoint}`);
-              await db.collection("devices").deleteOne({ _id: device._id });
-            } else {
-              console.warn(`[CRON] Push failed for device ${device._id}:`, pushErr.message);
-            }
+        // 3. Send Web Push to registered devices if enabled and not yet sent
+        if (reminder.pushNotification && !reminder.pushSentAt) {
+          const devices = await db
+            .collection("devices")
+            .find({ userId: reminder.userId, enabled: true })
+            .toArray();
+
+          const wp = getWebPush();
+          if (wp && devices.length > 0) {
+            const pushPayload = JSON.stringify({
+              title: `🔔 ${reminder.title}`,
+              body: reminder.description || "Your scheduled reminder is due now.",
+              tag: `reminder-${reminder._id.toString()}`,
+              url: "/",
+            });
+
+            await Promise.allSettled(
+              devices.map(async (device) => {
+                try {
+                  await wp.sendNotification(
+                    { endpoint: device.endpoint, keys: device.keys },
+                    pushPayload
+                  );
+                } catch (pushErr) {
+                  // Expired or revoked subscription (HTTP 410 / 404)
+                  if (pushErr.statusCode === 410 || pushErr.statusCode === 404) {
+                    await db.collection("devices").deleteOne({ _id: device._id });
+                  } else {
+                    console.warn(`[CRON] Push error for device ${device._id}:`, pushErr.message);
+                  }
+                }
+              })
+            );
           }
-        });
 
-        await Promise.all(pushPromises);
+          updateFields.pushSentAt = now;
+          pushSentCount++;
+        }
 
-        // 3. Create dashboard notification record (if dashboardNotification enabled)
-        if (reminder.dashboardNotification) {
+        // 4. Create in-app dashboard notification if enabled and not yet created
+        if (reminder.dashboardNotification && !reminder.dashboardSeenAt) {
           const existingNotif = await db.collection("notifications").findOne({
             reminderId: reminder._id,
           });
+
           if (!existingNotif) {
             await db.collection("notifications").insertOne({
               userId: reminder.userId,
@@ -82,25 +120,32 @@ export default async function handler(req, res) {
               createdAt: now,
             });
           }
+
+          updateFields.dashboardSeenAt = now;
+          notifCreatedCount++;
         }
 
-        // 4. Mark reminder pushSentAt to prevent duplicate sends
+        // 5. Mark reminder in MongoDB to prevent duplicate processing
         await db.collection("reminders").updateOne(
           { _id: reminder._id },
-          { $set: { pushSentAt: now, updatedAt: now } }
+          { $set: updateFields }
         );
-
-        console.log(`[CRON] Processed reminder: "${reminder.title}" for user ${reminder.userId}`);
-        processed++;
-      } catch (err) {
-        console.error(`[CRON] Error processing reminder ${reminder._id}:`, err);
+      } catch (itemErr) {
+        console.error(`[CRON] Error processing reminder ${reminder._id}:`, itemErr);
         errors++;
       }
     }
 
-    return res.status(200).json({ processed, errors, total: dueReminders.length });
+    return res.status(200).json({
+      success: true,
+      totalDue: dueReminders.length,
+      pushDispatched: pushSentCount,
+      dashboardAlertsCreated: notifCreatedCount,
+      errors,
+      timestamp: now.toISOString(),
+    });
   } catch (err) {
-    console.error("[CRON] Fatal error:", err);
-    return res.status(500).json({ error: "Cron job failed.", details: err.message });
+    console.error("[CRON] Scheduler execution error:", err);
+    return res.status(500).json({ error: "Scheduler execution failed.", details: err.message });
   }
 }
