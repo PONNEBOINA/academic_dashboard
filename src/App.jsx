@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import * as api from './api.js';
 
 // =====================================================================
 // NOTES & REMINDERS — REBUILT HELPER FUNCTIONS
@@ -161,19 +162,6 @@ function emptyForm() {
   };
 }
 
-// Save reminders array to localStorage
-function saveRemindersToStorage(list) {
-  try { localStorage.setItem('hod_reminders', JSON.stringify(list)); } catch(e) {}
-}
-
-// Load reminders from localStorage
-function loadRemindersFromStorage() {
-  try {
-    const raw = localStorage.getItem('hod_reminders');
-    if (raw) return JSON.parse(raw);
-  } catch(e) {}
-  return [];
-}
 
 
 // Helper function to parse CSV lines safely, handling commas inside quotes
@@ -266,8 +254,7 @@ const STUDENT_SHEET_KEY = import.meta.env.VITE_STUDENT_SHEET_KEY || "1mSW8MPo65d
 const MRV_STUDENT_SHEET_KEY = import.meta.env.VITE_MRV_STUDENT_SHEET_KEY || "1n8brEk3tdruKiOqqVRmVqwSwjdAF0_OMO35yXdeb0LI";   // MRV Student Sheet
 const INSTRUCTOR_SHEET_KEY = import.meta.env.VITE_INSTRUCTOR_SHEET_KEY || "1vr7OX1QvaxFTQYMlYOhLfYIvfG5m05KrXfx5K7B-Cls";    // Instructor Workload/Att Sheet
 
-// Backend API URL (for background push notifications & scheduling)
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && window.location.hostname !== 'localhost' ? '' : 'http://localhost:5000');
+
 
 // MRU Academic Calendar Dataset (1st Year Students - B.Tech All Branches 2026-27)
 const mruAcademicCalendarData = [
@@ -651,13 +638,12 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Authorized Admin Credentials State (with LocalStorage Persistence)
-  const [adminCreds, setAdminCreds] = useState(() => {
-    const saved = localStorage.getItem('admin_creds');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
-    }
-    return { username: 'vamshiyadav', password: 'Vamshiyadav123' };
+  // ── API / Login State ─────────────────────────────────────────────────
+  // Authentication is now token-based (JWT via /api/auth).
+  // No credentials are stored in the frontend.
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [currentUsername, setCurrentUsername] = useState(() => {
+    try { return localStorage.getItem('hod_username') || 'vamshiyadav'; } catch (e) { return 'vamshiyadav'; }
   });
 
   // Top-Level Navigation Module
@@ -669,7 +655,10 @@ export default function App() {
   // =====================================================================
   // NOTES & REMINDERS STATE
   // =====================================================================
-  const [reminders, setReminders] = useState(() => loadRemindersFromStorage());
+  // Reminders are loaded from MongoDB after login — start with empty array.
+  const [reminders, setReminders] = useState([]);
+  const [remindersLoading, setRemindersLoading] = useState(false);
+  const [remindersError, setRemindersError] = useState(null);
   const [reminderFilter, setReminderFilter] = useState('Upcoming'); // 'Upcoming' | 'Completed' | 'All'
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [editingReminder, setEditingReminder] = useState(null); // null = new, object = edit
@@ -677,9 +666,10 @@ export default function App() {
   const [reminderFormErrors, setReminderFormErrors] = useState({});
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
-  // Notification Bell
+  // Notification Bell (Dashboard notifications from MongoDB)
   const [bellOpen, setBellOpen] = useState(false);
   const bellRef = useRef(null);
+  const [dbNotifications, setDbNotifications] = useState([]);
 
   // Push notification permission status (safe for all mobile environments)
   const [pushPermission, setPushPermission] = useState(() => {
@@ -690,6 +680,7 @@ export default function App() {
     }
   });
   const [swRegistration, setSwRegistration] = useState(null);
+  const [deviceRegistered, setDeviceRegistered] = useState(false);
 
   // Settings Module State
   const [oldPassword, setOldPassword] = useState('');
@@ -778,29 +769,55 @@ export default function App() {
     setCalendarSemFilter('All Semesters');
   }, [calendarDeptFilter]);
 
-  // =====================================================================
-  // NOTES & REMINDERS EFFECTS
-  // =====================================================================
-
-  // Persist reminders to localStorage and sync to background server
-  useEffect(() => {
-    saveRemindersToStorage(reminders);
-    // Sync with background server scheduler (fire-and-forget)
-    if (BACKEND_URL) {
-      fetch(`${BACKEND_URL}/api/reminders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reminders)
-      }).catch(() => {
-        // Offline-first: localStorage holds the source of truth in the browser
-      });
+  // ── Fetch reminders from MongoDB API ────────────────────────────────
+  const fetchReminders = useCallback(async () => {
+    if (!isLoggedIn) return;
+    try {
+      setRemindersLoading(true);
+      setRemindersError(null);
+      const data = await api.getReminders();
+      setReminders(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('[REMINDERS] Fetch error:', err);
+      setRemindersError(err.message);
+      // If token expired, log out
+      if (err.message.includes('Unauthorized') || err.message.includes('expired')) {
+        api.logout();
+        setIsLoggedIn(false);
+      }
+    } finally {
+      setRemindersLoading(false);
     }
-  }, [reminders]);
+  }, [isLoggedIn]);
 
-  // Sync theme to document element
+  // ── Fetch dashboard bell notifications from MongoDB API ────────────
+  const fetchNotifications = useCallback(async () => {
+    if (!isLoggedIn) return;
+    try {
+      const data = await api.getNotifications();
+      setDbNotifications(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('[NOTIFICATIONS] Fetch error:', err);
+    }
+  }, [isLoggedIn]);
+
+  // Load reminders & notifications after login
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
+    if (isLoggedIn) {
+      fetchReminders();
+      fetchNotifications();
+    }
+  }, [isLoggedIn, fetchReminders, fetchNotifications]);
+
+  // 60-second polling: sync reminders & notifications from server
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const interval = setInterval(() => {
+      fetchReminders();
+      fetchNotifications();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [isLoggedIn, fetchReminders, fetchNotifications]);
 
   // Register Service Worker for Web Push
   useEffect(() => {
@@ -826,49 +843,6 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Foreground Reminder Scheduler: check every 15s if any notification is due
-  useEffect(() => {
-    const checkDueReminders = () => {
-      const now = new Date();
-      setReminders(prev => {
-        let changed = false;
-        const updated = prev.map(r => {
-          if (r.completed) return r;
-          if (!isDue(r.date, r.time)) return r;
-
-          let updates = {};
-
-          // Dashboard notification
-          if (r.dashboardNotification && !r.dashboardSeenAt) {
-            changed = true;
-            showAppNotification(
-              '🔔 Academic Dashboard',
-              `${r.title} — scheduled for ${formatReminderDateTime(r.date, r.time)}`,
-              `rem_${r.id}`
-            );
-            updates.dashboardSeenAt = now.toISOString();
-          }
-
-          // Push notification timestamp
-          if (r.pushNotification && !r.pushSentAt) {
-            changed = true;
-            updates.pushSentAt = now.toISOString();
-          }
-
-          if (Object.keys(updates).length > 0) {
-            return { ...r, ...updates };
-          }
-          return r;
-        });
-        return changed ? updated : prev;
-      });
-    };
-
-    checkDueReminders();
-    const interval = setInterval(checkDueReminders, 15000);
-    return () => clearInterval(interval);
-  }, []);
-
   // =====================================================================
   // NOTES & REMINDERS COMPUTED VALUES
   // =====================================================================
@@ -892,14 +866,11 @@ export default function App() {
       ? completedReminders
       : [...reminders].sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
 
-  // Unread dashboard notifications: due, not completed, not seen yet
-  const unreadBellCount = reminders.filter(r =>
-    !r.completed && r.dashboardNotification && isDue(r.date, r.time) && !r.dashboardSeenAt
-  ).length;
+  // Unread dashboard notifications from MongoDB
+  const unreadBellCount = dbNotifications.filter(n => !n.read).length;
 
-  const bellNotifications = reminders
-    .filter(r => r.dashboardNotification && isDue(r.date, r.time))
-    .sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`));
+  const bellNotifications = dbNotifications
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
   // =====================================================================
   // NOTES & REMINDERS HANDLERS
@@ -942,73 +913,89 @@ export default function App() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSaveReminder = () => {
+  const handleSaveReminder = async () => {
     if (!validateReminderForm()) return;
-    if (editingReminder) {
-      // Update existing
-      setReminders(prev => prev.map(r =>
-        r.id === editingReminder.id
-          ? {
-              ...r,
-              title: reminderForm.title.trim(),
-              description: reminderForm.description.trim(),
-              date: reminderForm.date,
-              time: reminderForm.time,
-              priority: reminderForm.priority,
-              dashboardNotification: reminderForm.dashboardNotification,
-              pushNotification: reminderForm.pushNotification,
-              dashboardSeenAt: r.date === reminderForm.date && r.time === reminderForm.time ? r.dashboardSeenAt : null,
-              pushSentAt: r.date === reminderForm.date && r.time === reminderForm.time ? r.pushSentAt : null,
-              updatedAt: new Date().toISOString()
-            }
-          : r
-      ));
-    } else {
-      // Create new
-      const newReminder = {
-        id: generateId(),
-        title: reminderForm.title.trim(),
-        description: reminderForm.description.trim(),
-        date: reminderForm.date,
-        time: reminderForm.time,
-        priority: reminderForm.priority,
-        completed: false,
-        dashboardNotification: reminderForm.dashboardNotification,
-        pushNotification: reminderForm.pushNotification,
-        dashboardSeenAt: null,
-        pushSentAt: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      setReminders(prev => [...prev, newReminder]);
+    try {
+      if (editingReminder) {
+        // Update existing via API
+        const reminderId = editingReminder._id || editingReminder.id;
+        await api.updateReminder(reminderId, {
+          title: reminderForm.title.trim(),
+          description: reminderForm.description.trim(),
+          date: reminderForm.date,
+          time: reminderForm.time,
+          priority: reminderForm.priority,
+          dashboardNotification: reminderForm.dashboardNotification,
+          pushNotification: reminderForm.pushNotification,
+        });
+      } else {
+        // Create new via API
+        await api.createReminder({
+          title: reminderForm.title.trim(),
+          description: reminderForm.description.trim(),
+          date: reminderForm.date,
+          time: reminderForm.time,
+          priority: reminderForm.priority,
+          dashboardNotification: reminderForm.dashboardNotification,
+          pushNotification: reminderForm.pushNotification,
+        });
+      }
+      closeModal();
+      await fetchReminders();
+    } catch (err) {
+      alert(`Failed to save reminder: ${err.message}`);
     }
-    closeModal();
   };
 
-  const toggleReminderComplete = (id) => {
-    setReminders(prev => prev.map(r =>
-      r.id === id ? { ...r, completed: !r.completed, updatedAt: new Date().toISOString() } : r
-    ));
+  const toggleReminderComplete = async (id) => {
+    const reminder = reminders.find(r => (r._id || r.id) === id);
+    if (!reminder) return;
+    try {
+      await api.updateReminder(id, { completed: !reminder.completed });
+      await fetchReminders();
+    } catch (err) {
+      console.error('Toggle complete error:', err);
+    }
   };
 
   const confirmDeleteReminder = (id) => {
     setDeleteConfirmId(id);
   };
 
-  const handleDeleteReminder = () => {
+  const handleDeleteReminder = async () => {
     if (deleteConfirmId) {
-      setReminders(prev => prev.filter(r => r.id !== deleteConfirmId));
-      setDeleteConfirmId(null);
+      try {
+        await api.deleteReminder(deleteConfirmId);
+        setDeleteConfirmId(null);
+        await fetchReminders();
+        await fetchNotifications();
+      } catch (err) {
+        alert(`Failed to delete reminder: ${err.message}`);
+        setDeleteConfirmId(null);
+      }
     }
   };
 
-  const markBellSeen = () => {
-    setReminders(prev => prev.map(r =>
-      !r.completed && r.dashboardNotification && isDue(r.date, r.time) && !r.dashboardSeenAt
-        ? { ...r, dashboardSeenAt: new Date().toISOString() }
-        : r
-    ));
+  const markBellSeen = async () => {
+    try {
+      await api.markNotificationsRead();
+      await fetchNotifications();
+    } catch (err) {
+      console.error('Mark bell seen error:', err);
+    }
   };
+
+  // ── VAPID helper: convert base64 URL string to Uint8Array ──────────
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
 
   const enablePushNotifications = async () => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -1021,13 +1008,41 @@ export default function App() {
       setPushPermission(permission);
 
       if (permission === 'granted') {
+        // Register / reuse service worker
+        let reg = swRegistration;
         if ('serviceWorker' in navigator) {
           try {
-            const reg = await navigator.serviceWorker.register('/sw.js');
+            reg = await navigator.serviceWorker.register('/sw.js');
             setSwRegistration(reg);
             await navigator.serviceWorker.ready;
           } catch (e) {
             console.warn('SW registration:', e);
+          }
+        }
+
+        // Subscribe to Web Push with VAPID public key
+        const vapidPublicKey = api.getVapidPublicKey();
+        if (vapidPublicKey && reg) {
+          try {
+            let subscription = await reg.pushManager.getSubscription();
+            if (!subscription) {
+              subscription = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+              });
+            }
+
+            // Detect platform
+            const ua = navigator.userAgent || '';
+            let platform = 'desktop';
+            if (/iPhone|iPad|iPod/.test(ua)) platform = 'ios';
+            else if (/Android/.test(ua)) platform = 'android';
+
+            // Register with backend
+            await api.registerDevice(subscription.toJSON(), platform);
+            setDeviceRegistered(true);
+          } catch (subErr) {
+            console.warn('Push subscription error:', subErr);
           }
         }
 
@@ -1584,17 +1599,51 @@ export default function App() {
   const attentionMediumCount = attentionAlerts.filter(a => a.priority === 2).length;
   const attentionTotalCount = attentionAlerts.length;
 
-  // --- STRICT ADMIN LOGIN HANDLER ---
-  const handleLogin = (e) => {
+  // --- ADMIN LOGIN HANDLER (MongoDB + JWT) ---
+  const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
+    setLoginLoading(true);
 
-    if (usernameInput.trim() === adminCreds.username && passwordInput === adminCreds.password) {
+    try {
+      const data = await api.login(usernameInput.trim(), passwordInput);
+      if (data?.username) {
+        setCurrentUsername(data.username);
+        try { localStorage.setItem('hod_username', data.username); } catch (e) {}
+      }
       setIsLoggedIn(true);
       setLoginError('');
-    } else {
-      setLoginError('Invalid username or password. Access restricted to authorized administrator.');
+    } catch (err) {
+      setLoginError(err.message || 'Invalid username or password. Access restricted to authorized administrator.');
+    } finally {
+      setLoginLoading(false);
     }
+  };
+
+  // Check for existing valid token on app load
+  useEffect(() => {
+    if (api.hasToken() && !isLoggedIn) {
+      // Verify token by attempting a lightweight API call
+      api.getReminders()
+        .then(data => {
+          setIsLoggedIn(true);
+          setReminders(Array.isArray(data) ? data : []);
+        })
+        .catch(() => {
+          api.logout(); // Token expired
+        });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- HANDLE LOGOUT ---
+  const handleLogout = () => {
+    api.logout();
+    setIsLoggedIn(false);
+    setReminders([]);
+    setDbNotifications([]);
+    setUsernameInput('');
+    setPasswordInput('');
+    try { localStorage.removeItem('hod_username'); } catch (e) {}
   };
 
   // --- PASSWORD COMPLEXITY VALIDATOR & UPDATE HANDLER ---
@@ -1610,14 +1659,9 @@ export default function App() {
   const currentComplexity = checkPassComplexity(newPassword);
   const isComplexityValid = currentComplexity.hasMinLen && currentComplexity.hasUpper && currentComplexity.hasLower && currentComplexity.hasNumber;
 
-  const handlePasswordUpdate = (e) => {
+  const handlePasswordUpdate = async (e) => {
     e.preventDefault();
     setSettingsStatus({ type: '', message: '' });
-
-    if (oldPassword !== adminCreds.password) {
-      setSettingsStatus({ type: 'error', message: 'Current password entered is incorrect.' });
-      return;
-    }
 
     if (newPassword !== confirmPassword) {
       setSettingsStatus({ type: 'error', message: 'New password and confirmation password do not match.' });
@@ -1629,14 +1673,15 @@ export default function App() {
       return;
     }
 
-    const updatedCreds = { ...adminCreds, password: newPassword };
-    setAdminCreds(updatedCreds);
-    localStorage.setItem('admin_creds', JSON.stringify(updatedCreds));
-
-    setOldPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setSettingsStatus({ type: 'success', message: 'Password updated successfully! Please use your new password for future logins.' });
+    try {
+      await api.changePassword(oldPassword, newPassword);
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setSettingsStatus({ type: 'success', message: 'Password updated successfully! Please use your new password for future logins.' });
+    } catch (err) {
+      setSettingsStatus({ type: 'error', message: err.message || 'Failed to update password.' });
+    }
   };
 
   if (!isLoggedIn) {
@@ -1677,7 +1722,9 @@ export default function App() {
               required
             />
           </div>
-          <button className="btn btn-primary login-btn" type="submit">Log In</button>
+          <button className="btn btn-primary login-btn" type="submit" disabled={loginLoading}>
+            {loginLoading ? 'Authenticating...' : 'Log In'}
+          </button>
         </form>
       </div>
     );
@@ -2031,7 +2078,7 @@ export default function App() {
 
         <div className="mobile-drawer-footer">
           <div className="drawer-user-info">
-            <span>👤 Admin:</span> <strong>{adminCreds.username}</strong>
+            <span>👤 Admin:</span> <strong>{currentUsername}</strong>
           </div>
           <button
             className="drawer-theme-toggle"
@@ -2041,7 +2088,7 @@ export default function App() {
           </button>
           <button
             className="btn btn-outline drawer-logout-btn"
-            onClick={() => { setIsLoggedIn(false); setMobileMenuOpen(false); }}
+            onClick={() => { handleLogout(); setMobileMenuOpen(false); }}
           >
             🚪 Log Out
           </button>
@@ -2121,7 +2168,7 @@ export default function App() {
           </li>
         </ul>
         <div className="sidebar-footer">
-          <button className="btn btn-outline logout-desktop-btn" onClick={() => setIsLoggedIn(false)} style={{ width: '100%' }}>
+          <button className="btn btn-outline logout-desktop-btn" onClick={handleLogout} style={{ width: '100%' }}>
             🚪 Log Out
           </button>
         </div>
@@ -2220,10 +2267,10 @@ export default function App() {
             >
               {theme === 'dark' ? '🌞' : '🌙'}
             </button>
-            <span className="welcome-text desktop-welcome">Welcome, {adminCreds.username}</span>
+            <span className="welcome-text desktop-welcome">Welcome, {currentUsername}</span>
             <button
               className="btn btn-outline desktop-logout-btn"
-              onClick={() => setIsLoggedIn(false)}
+              onClick={handleLogout}
             >
               Log Out
             </button>
@@ -3628,7 +3675,7 @@ export default function App() {
                     <input
                       className="text-input"
                       type="text"
-                      value={adminCreds.username}
+                      value={currentUsername}
                       disabled
                       style={{ opacity: 0.7, cursor: 'not-allowed', background: 'rgba(0,0,0,0.1)' }}
                     />
@@ -3832,9 +3879,10 @@ export default function App() {
               ) : (
                 <div className="reminders-grid">
                   {displayedReminders.map(r => {
+                    const reminderKey = r._id || r.id;
                     const overdue = !r.completed ? getOverdue(r.date, r.time) : null;
                     return (
-                      <div key={r.id} className={`reminder-card ${r.completed ? 'completed' : ''}`}>
+                      <div key={reminderKey} className={`reminder-card ${r.completed ? 'completed' : ''}`}>
                         {/* Top Row: Priority + Title + Status */}
                         <div className="reminder-card-top">
                           <div style={{ flex: 1 }}>
@@ -3878,7 +3926,7 @@ export default function App() {
                           <button
                             className={`btn ${r.completed ? 'btn-outline' : 'btn-primary'}`}
                             style={{ flex: 1, fontSize: '0.8rem', padding: '0.45rem 0.6rem' }}
-                            onClick={() => toggleReminderComplete(r.id)}
+                            onClick={() => toggleReminderComplete(reminderKey)}
                           >
                             {r.completed ? '↩ Mark Pending' : '✓ Mark Complete'}
                           </button>
@@ -3893,7 +3941,7 @@ export default function App() {
                           <button
                             className="btn btn-outline"
                             style={{ fontSize: '0.8rem', padding: '0.45rem 0.75rem', color: 'var(--danger)', borderColor: 'var(--danger)' }}
-                            onClick={() => confirmDeleteReminder(r.id)}
+                            onClick={() => confirmDeleteReminder(reminderKey)}
                             title="Delete reminder"
                           >
                             🗑
