@@ -649,6 +649,7 @@ export default function App() {
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Authorized Admin Credentials State (with LocalStorage Persistence)
   const [adminCreds, setAdminCreds] = useState(() => {
@@ -795,6 +796,11 @@ export default function App() {
       });
     }
   }, [reminders]);
+
+  // Sync theme to document element
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   // Register Service Worker for Web Push
   useEffect(() => {
@@ -1635,7 +1641,7 @@ export default function App() {
 
   if (!isLoggedIn) {
     return (
-      <div className="login-overlay">
+      <div className="login-overlay" data-theme={theme}>
         <form className="login-card" onSubmit={handleLogin}>
           <div className="login-logo">🎓</div>
           <h2 className="login-title">Academic ERP Portal</h2>
@@ -1678,7 +1684,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-container">
+    <div className="app-container" data-theme={theme}>
 
       {/* ============================================================= */}
       {/* DELETE CONFIRMATION DIALOG */}
@@ -1929,8 +1935,121 @@ export default function App() {
         </div>
       )}
 
-      {/* Sidebar Navigation */}
-      <aside className="sidebar">
+      {/* Mobile Navigation Drawer Backdrop */}
+      {mobileMenuOpen && (
+        <div
+          className="mobile-nav-backdrop"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Mobile Navigation Drawer */}
+      <aside className={`mobile-nav-drawer ${mobileMenuOpen ? 'open' : ''}`}>
+        <div className="mobile-drawer-header">
+          <div className="logo-section">
+            <span className="logo-icon">🎓</span>
+            <span className="logo-text">Academic ERP</span>
+          </div>
+          <button
+            className="mobile-drawer-close-btn"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label="Close navigation menu"
+          >
+            ✕
+          </button>
+        </div>
+
+        <nav className="mobile-drawer-nav">
+          <ul className="nav-links">
+            <li>
+              <a
+                className={`nav-item ${activeModule === 'students' ? 'active' : ''}`}
+                href="#student-attendance"
+                onClick={(e) => { e.preventDefault(); setActiveModule('students'); setMobileMenuOpen(false); }}
+              >
+                <span>📊</span> <span>Student Attendance</span>
+              </a>
+            </li>
+            <li>
+              <a
+                className={`nav-item ${activeModule === 'attention' ? 'active' : ''}`}
+                href="#attention-required"
+                onClick={(e) => { e.preventDefault(); setActiveModule('attention'); setMobileMenuOpen(false); }}
+              >
+                <span>⚠️</span> <span>Attention Required</span>
+                {attentionTotalCount > 0 && (
+                  <span className="bell-unread-badge nav-badge">
+                    {attentionTotalCount}
+                  </span>
+                )}
+              </a>
+            </li>
+            <li>
+              <a
+                className={`nav-item ${activeModule === 'instructors' ? 'active' : ''}`}
+                href="#instructor-management"
+                onClick={(e) => { e.preventDefault(); setActiveModule('instructors'); setMobileMenuOpen(false); }}
+              >
+                <span>👨‍🏫</span> <span>Instructor Management</span>
+              </a>
+            </li>
+            <li>
+              <a
+                className={`nav-item ${activeModule === 'calendar' ? 'active' : ''}`}
+                href="#academic-calendar"
+                onClick={(e) => { e.preventDefault(); setActiveModule('calendar'); setMobileMenuOpen(false); }}
+              >
+                <span>📅</span> <span>Academic Calendar</span>
+              </a>
+            </li>
+            <li>
+              <a
+                className={`nav-item ${activeModule === 'reminders' ? 'active' : ''}`}
+                href="#reminders"
+                onClick={(e) => { e.preventDefault(); setActiveModule('reminders'); setMobileMenuOpen(false); }}
+              >
+                <span>📝</span> <span>Notes &amp; Reminders</span>
+                {upcomingReminders.length > 0 && (
+                  <span className="bell-unread-badge nav-badge">
+                    {upcomingReminders.length}
+                  </span>
+                )}
+              </a>
+            </li>
+            <li>
+              <a
+                className={`nav-item ${activeModule === 'settings' ? 'active' : ''}`}
+                href="#settings"
+                onClick={(e) => { e.preventDefault(); setActiveModule('settings'); setMobileMenuOpen(false); }}
+              >
+                <span>⚙️</span> <span>Settings</span>
+              </a>
+            </li>
+          </ul>
+        </nav>
+
+        <div className="mobile-drawer-footer">
+          <div className="drawer-user-info">
+            <span>👤 Admin:</span> <strong>{adminCreds.username}</strong>
+          </div>
+          <button
+            className="drawer-theme-toggle"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          >
+            {theme === 'dark' ? '🌞 Switch to Light Mode' : '🌙 Switch to Dark Mode'}
+          </button>
+          <button
+            className="btn btn-outline drawer-logout-btn"
+            onClick={() => { setIsLoggedIn(false); setMobileMenuOpen(false); }}
+          >
+            🚪 Log Out
+          </button>
+        </div>
+      </aside>
+
+      {/* Desktop Sidebar Navigation */}
+      <aside className="sidebar desktop-sidebar">
         <div className="logo-section">
           <span className="logo-icon">🎓</span>
           <span className="logo-text">Academic ERP</span>
@@ -2011,22 +2130,36 @@ export default function App() {
       {/* Main Workspace */}
       <main className="main-content">
         <header className="top-header">
-          <div className="header-brand-wrap">
+          {/* Mobile Left: Hamburger + Logo */}
+          <div className="mobile-header-left">
+            <button
+              className="hamburger-btn"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Open navigation menu"
+            >
+              <span className="hamburger-line"></span>
+              <span className="hamburger-line"></span>
+              <span className="hamburger-line"></span>
+            </button>
             <div className="mobile-header-brand">
               <span className="logo-icon">🎓</span>
               <span className="logo-text">Academic ERP</span>
             </div>
-            <h1 className="header-title">
-              {activeModule === 'students' && 'Student Attendance'}
-              {activeModule === 'attention' && '⚠️ Attention Required'}
-              {activeModule === 'instructors' && 'Instructor Management'}
-              {activeModule === 'calendar' && 'Academic Calendar'}
-              {activeModule === 'settings' && 'Admin Settings'}
-              {activeModule === 'reminders' && '📝 Notes & Reminders'}
-            </h1>
           </div>
+
+          {/* Desktop Title */}
+          <h1 className="header-title desktop-header-title">
+            {activeModule === 'students' && 'Student Attendance Dashboard'}
+            {activeModule === 'attention' && '⚠️ Attention Required — Operational Alert Center'}
+            {activeModule === 'instructors' && 'Instructor Workload, Syllabus & Attendance'}
+            {activeModule === 'calendar' && 'Academic Calendar 2026-27'}
+            {activeModule === 'settings' && 'Admin Settings & Security'}
+            {activeModule === 'reminders' && '📝 Notes & Reminders'}
+          </h1>
+
+          {/* User Controls */}
           <div className="user-controls">
-            {/* Notification Bell */}
+            {/* Notification Bell (Always accessible on Mobile & Desktop) */}
             <div className="bell-container" ref={bellRef}>
               <button
                 className="bell-btn"
@@ -2078,21 +2211,22 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {/* Desktop-only Quick Controls (Mobile accesses them inside drawer) */}
             <button
-              className="theme-toggle"
+              className="theme-toggle desktop-theme-toggle"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               aria-label="Toggle dark mode"
             >
               {theme === 'dark' ? '🌞' : '🌙'}
             </button>
+            <span className="welcome-text desktop-welcome">Welcome, {adminCreds.username}</span>
             <button
-              className="btn btn-outline mobile-logout-btn"
+              className="btn btn-outline desktop-logout-btn"
               onClick={() => setIsLoggedIn(false)}
-              title="Log Out"
             >
-              🚪 <span className="logout-text">Logout</span>
+              Log Out
             </button>
-            <span className="welcome-text">Welcome, {adminCreds.username}</span>
           </div>
         </header>
 
