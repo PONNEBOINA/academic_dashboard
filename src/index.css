@@ -1703,6 +1703,43 @@ body {
   box-shadow: 0 4px 12px rgba(99, 155, 255, 0.3);
 }
 
+/* Desktop brand & logout styles */
+.header-brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.mobile-header-brand {
+  display: none;
+}
+
+.mobile-logout-btn {
+  display: none;
+}
+
+.welcome-text {
+  display: inline-block;
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
+.nav-badge {
+  position: relative;
+  top: auto;
+  right: auto;
+  margin-left: 5px;
+  font-size: 0.65rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--danger);
+}
+
 /* ============================================================ */
 /* MOBILE & TABLET RESPONSIVE EXCELLENCE (iOS & Android)        */
 /* ============================================================ */
@@ -1716,40 +1753,85 @@ body {
 
   .app-container {
     flex-direction: column;
+    min-height: 100vh;
   }
 
-  /* Compact Sticky Header & Top Nav */
-  .sidebar {
-    width: 100%;
-    padding: 0.75rem 1rem 0.5rem;
-    border-right: none;
-    border-bottom: 1px solid var(--card-border);
+  /* Sleek Unified Mobile Top Bar */
+  .top-header {
+    height: 52px;
+    padding: 0 0.85rem;
     position: sticky;
     top: 0;
-    z-index: 100;
+    z-index: 120;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    background: var(--card-bg);
   }
 
-  .logo-section {
-    margin-bottom: 0.5rem;
-    gap: 0.5rem;
-  }
-
-  .logo-icon {
-    font-size: 1.2rem;
-  }
-
-  .logo-text {
-    font-size: 1rem;
+  .mobile-header-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 800;
+    font-size: 0.98rem;
     letter-spacing: -0.01em;
+  }
+
+  .mobile-header-brand .logo-icon {
+    font-size: 1.25rem;
+  }
+
+  .header-title {
+    display: none !important;
+  }
+
+  .user-controls {
+    gap: 0.45rem;
+    font-size: 0.8rem;
+  }
+
+  .welcome-text {
+    display: none !important;
+  }
+
+  .mobile-logout-btn {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.35rem 0.6rem !important;
+    font-size: 0.75rem !important;
+    font-weight: 700;
+    border-radius: 8px !important;
+  }
+
+  /* Compact Horizontal Sub-Navigation Carousel */
+  .sidebar {
+    width: 100%;
+    padding: 0.35rem 0.6rem;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 52px;
+    z-index: 110;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    background: var(--bg);
+  }
+
+  .sidebar .logo-section {
+    display: none !important;
+  }
+
+  .sidebar-footer {
+    display: none !important;
   }
 
   .nav-links {
     flex-direction: row;
     overflow-x: auto;
-    gap: 0.4rem;
-    padding-bottom: 0.25rem;
+    gap: 0.35rem;
+    padding: 0.15rem 0;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
@@ -1759,108 +1841,99 @@ body {
   }
 
   .nav-item {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.78rem;
+    padding: 0.38rem 0.75rem;
+    font-size: 0.76rem;
     white-space: nowrap;
     border-radius: 999px;
-    gap: 0.35rem;
-  }
-
-  /* Top Header / Bar */
-  .top-header {
-    height: 52px;
-    padding: 0 1rem;
-  }
-
-  .top-header h1 {
-    font-size: 0.95rem !important;
-  }
-
-  .user-controls {
-    gap: 0.75rem;
-    font-size: 0.8rem;
+    gap: 0.3rem;
   }
 
   /* Dashboard Body Container */
   .dashboard-body {
-    padding: 0.85rem;
+    padding: 0.75rem;
   }
 
   /* Filter Bar */
   .filter-bar {
-    padding: 0.85rem;
-    gap: 0.6rem;
+    padding: 0.75rem;
+    gap: 0.5rem;
     border-radius: 12px;
-    margin-bottom: 1rem;
+    margin-bottom: 0.85rem;
   }
 
   .filter-group {
-    flex: 1 1 calc(50% - 0.6rem);
-    min-width: 130px;
+    flex: 1 1 calc(50% - 0.5rem);
+    min-width: 125px;
+  }
+
+  .filter-group label {
+    font-size: 0.72rem;
+    margin-bottom: 0.25rem;
   }
 
   .select-input, .date-input, .text-input {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.82rem;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.8rem;
     border-radius: 8px;
+    height: 38px;
   }
 
   /* 2-Column Metrics / Stat Cards */
   .stats-grid {
     grid-template-columns: repeat(2, 1fr) !important;
-    gap: 0.65rem !important;
-    margin-bottom: 1.25rem !important;
+    gap: 0.55rem !important;
+    margin-bottom: 1rem !important;
   }
 
   .stat-card {
-    padding: 0.85rem !important;
+    padding: 0.75rem !important;
     border-radius: 12px !important;
   }
 
   .stat-card .stat-value {
-    font-size: 1.35rem !important;
+    font-size: 1.25rem !important;
     line-height: 1.2;
   }
 
   .stat-card .stat-label {
-    font-size: 0.7rem !important;
+    font-size: 0.68rem !important;
     letter-spacing: 0.02em;
   }
 
   .stat-card .stat-icon {
-    font-size: 1.1rem !important;
+    font-size: 1.05rem !important;
   }
 
   /* Attention Required Module */
   .attention-summary-grid {
     grid-template-columns: repeat(2, 1fr) !important;
-    gap: 0.65rem !important;
-    margin-bottom: 1.25rem !important;
+    gap: 0.55rem !important;
+    margin-bottom: 1rem !important;
   }
 
   .attention-stat-card {
-    padding: 0.75rem 0.85rem !important;
+    padding: 0.7rem 0.8rem !important;
     border-radius: 12px !important;
   }
 
   .attention-stat-card .attention-stat-value {
-    font-size: 1.35rem !important;
+    font-size: 1.25rem !important;
   }
 
   .priority-section-card {
-    padding: 0.85rem !important;
+    padding: 0.75rem !important;
     border-radius: 12px !important;
-    margin-bottom: 0.85rem !important;
+    margin-bottom: 0.75rem !important;
   }
 
   .priority-section-title {
-    font-size: 0.9rem !important;
+    font-size: 0.85rem !important;
   }
 
   .attention-item-card {
-    padding: 0.75rem !important;
+    padding: 0.65rem 0.75rem !important;
     border-radius: 10px !important;
-    font-size: 0.82rem !important;
+    font-size: 0.8rem !important;
   }
 
   /* Tables & Responsive Lists */
@@ -1871,8 +1944,8 @@ body {
   }
 
   table th, table td {
-    padding: 0.55rem 0.65rem !important;
-    font-size: 0.78rem !important;
+    padding: 0.5rem 0.6rem !important;
+    font-size: 0.76rem !important;
     white-space: nowrap;
   }
 
@@ -1882,20 +1955,48 @@ body {
   }
 
   /* Reminders Module */
+  .reminders-overview-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem !important;
+    margin-bottom: 0.85rem !important;
+  }
+
+  .reminders-widget-container {
+    padding: 0.85rem !important;
+    border-radius: 12px !important;
+  }
+
+  .reminders-widget-title {
+    font-size: 0.88rem !important;
+  }
+
+  .reminder-widget-item {
+    padding: 0.5rem 0.65rem !important;
+    font-size: 0.8rem !important;
+    border-radius: 8px !important;
+  }
+
   .reminders-page-header {
     flex-direction: column !important;
     align-items: stretch !important;
-    gap: 0.65rem !important;
+    gap: 0.6rem !important;
+    margin-bottom: 0.85rem !important;
+  }
+
+  .sub-tab-btn {
+    padding: 0.35rem 0.75rem !important;
+    font-size: 0.78rem !important;
   }
 
   .reminders-grid {
     grid-template-columns: 1fr !important;
-    gap: 0.75rem !important;
+    gap: 0.65rem !important;
   }
 
   .reminder-card {
     padding: 0.85rem !important;
     border-radius: 12px !important;
+    gap: 0.65rem !important;
   }
 
   .reminder-card-title {
@@ -1903,26 +2004,42 @@ body {
   }
 
   .reminder-card-desc {
-    font-size: 0.8rem !important;
+    font-size: 0.78rem !important;
+  }
+
+  .reminder-card-meta {
+    font-size: 0.75rem !important;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .reminder-card-actions {
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .reminder-card-actions .btn {
+    padding: 0.35rem 0.65rem !important;
+    font-size: 0.75rem !important;
   }
 
   /* Modals */
   .modal-content {
-    width: 94vw !important;
-    max-height: 88vh !important;
-    padding: 1.1rem !important;
-    border-radius: 16px !important;
+    width: 95vw !important;
+    max-height: 90vh !important;
+    padding: 1rem !important;
+    border-radius: 14px !important;
   }
 
   .modal-header h2 {
-    font-size: 1rem !important;
+    font-size: 0.95rem !important;
   }
 
   /* Notification Bell Dropdown */
   .bell-dropdown {
-    width: calc(100vw - 2rem) !important;
+    width: calc(100vw - 1.5rem) !important;
     max-width: 320px !important;
-    right: -10px !important;
+    right: -6px !important;
   }
 }
 

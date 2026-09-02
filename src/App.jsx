@@ -1942,7 +1942,7 @@ export default function App() {
               href="#student-attendance"
               onClick={(e) => { e.preventDefault(); setActiveModule('students'); }}
             >
-              <span>📊</span> Student Attendance
+              <span>📊</span> <span>Attendance</span>
             </a>
           </li>
           <li>
@@ -1951,9 +1951,9 @@ export default function App() {
               href="#attention-required"
               onClick={(e) => { e.preventDefault(); setActiveModule('attention'); }}
             >
-              <span>⚠️</span> Attention Required
+              <span>⚠️</span> <span>Attention</span>
               {attentionTotalCount > 0 && (
-                <span className="bell-unread-badge" style={{ position: 'relative', top: 'auto', right: 'auto', marginLeft: '6px', background: 'var(--danger)' }}>
+                <span className="bell-unread-badge nav-badge">
                   {attentionTotalCount}
                 </span>
               )}
@@ -1965,7 +1965,7 @@ export default function App() {
               href="#instructor-management"
               onClick={(e) => { e.preventDefault(); setActiveModule('instructors'); }}
             >
-              <span>👨‍🏫</span> Instructor Management
+              <span>👨‍🏫</span> <span>Instructors</span>
             </a>
           </li>
           <li>
@@ -1974,16 +1974,7 @@ export default function App() {
               href="#academic-calendar"
               onClick={(e) => { e.preventDefault(); setActiveModule('calendar'); }}
             >
-              <span>📅</span> Academic Calendar
-            </a>
-          </li>
-          <li>
-            <a
-              className={`nav-item ${activeModule === 'settings' ? 'active' : ''}`}
-              href="#settings"
-              onClick={(e) => { e.preventDefault(); setActiveModule('settings'); }}
-            >
-              <span>⚙️</span> Settings
+              <span>📅</span> <span>Calendar</span>
             </a>
           </li>
           <li>
@@ -1992,35 +1983,48 @@ export default function App() {
               href="#reminders"
               onClick={(e) => { e.preventDefault(); setActiveModule('reminders'); }}
             >
-              <span>📝</span> Notes &amp; Reminders
+              <span>📝</span> <span>Reminders</span>
               {upcomingReminders.length > 0 && (
-                <span className="bell-unread-badge" style={{ position: 'relative', top: 'auto', right: 'auto', marginLeft: '4px' }}>
+                <span className="bell-unread-badge nav-badge">
                   {upcomingReminders.length}
                 </span>
               )}
             </a>
           </li>
+          <li>
+            <a
+              className={`nav-item ${activeModule === 'settings' ? 'active' : ''}`}
+              href="#settings"
+              onClick={(e) => { e.preventDefault(); setActiveModule('settings'); }}
+            >
+              <span>⚙️</span> <span>Settings</span>
+            </a>
+          </li>
         </ul>
-        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {isLoggedIn && (
-            <button className="btn btn-outline" onClick={() => setIsLoggedIn(false)} style={{ width: '100%' }}>
-              Log Out
-            </button>
-          )}
+        <div className="sidebar-footer">
+          <button className="btn btn-outline logout-desktop-btn" onClick={() => setIsLoggedIn(false)} style={{ width: '100%' }}>
+            🚪 Log Out
+          </button>
         </div>
       </aside>
 
       {/* Main Workspace */}
       <main className="main-content">
         <header className="top-header">
-          <h1>
-            {activeModule === 'students' && 'Student Attendance Dashboard'}
-            {activeModule === 'attention' && '⚠️ Attention Required — Operational & Academic Alert Center'}
-            {activeModule === 'instructors' && 'Instructor Workload, Syllabus & Attendance'}
-            {activeModule === 'calendar' && `Academic Calendar 2026-27 (${calendarDeptFilter === 'MRU' ? 'MRU - 1st Year Students' : 'MRV - 2nd Year Students'})`}
-            {activeModule === 'settings' && 'Admin Settings & Security'}
-            {activeModule === 'reminders' && '📝 Notes & Reminders'}
-          </h1>
+          <div className="header-brand-wrap">
+            <div className="mobile-header-brand">
+              <span className="logo-icon">🎓</span>
+              <span className="logo-text">Academic ERP</span>
+            </div>
+            <h1 className="header-title">
+              {activeModule === 'students' && 'Student Attendance'}
+              {activeModule === 'attention' && '⚠️ Attention Required'}
+              {activeModule === 'instructors' && 'Instructor Management'}
+              {activeModule === 'calendar' && 'Academic Calendar'}
+              {activeModule === 'settings' && 'Admin Settings'}
+              {activeModule === 'reminders' && '📝 Notes & Reminders'}
+            </h1>
+          </div>
           <div className="user-controls">
             {/* Notification Bell */}
             <div className="bell-container" ref={bellRef}>
@@ -2081,7 +2085,14 @@ export default function App() {
             >
               {theme === 'dark' ? '🌞' : '🌙'}
             </button>
-            {isLoggedIn && <span style={{ fontWeight: 600 }}>Welcome, {adminCreds.username}</span>}
+            <button
+              className="btn btn-outline mobile-logout-btn"
+              onClick={() => setIsLoggedIn(false)}
+              title="Log Out"
+            >
+              🚪 <span className="logout-text">Logout</span>
+            </button>
+            <span className="welcome-text">Welcome, {adminCreds.username}</span>
           </div>
         </header>
 
