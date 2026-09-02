@@ -19,10 +19,20 @@ function formatReminderDateTime(dateStr, timeStr) {
   const monthIdx = parseInt(parts[1], 10) - 1;
   const year = parts[0];
   const [hh, mm] = timeStr.split(':');
-  let h = parseInt(hh, 10);
+  let h = parseInt(hh, 10) || 0;
   const ampm = h >= 12 ? 'PM' : 'AM';
   h = h % 12 || 12;
-  return `${day} ${MONTHS_SHORT[monthIdx] || ''} ${year} • ${String(h).padStart(2,'0')}:${mm} ${ampm}`;
+  return `${day} ${MONTHS_SHORT[monthIdx] || ''} ${year} • ${String(h).padStart(2,'0')}:${mm || '00'} ${ampm}`;
+}
+
+// Format HH:MM -> "10:30 AM" safely
+function formatTime12h(timeStr) {
+  if (!timeStr) return '';
+  const [hh, mm] = timeStr.split(':');
+  let h = parseInt(hh, 10) || 0;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${String(h).padStart(2, '0')}:${mm || '00'} ${ampm}`;
 }
 
 // Returns overdue string like "2h overdue" or null
@@ -618,10 +628,14 @@ export default function App() {
   const [bellOpen, setBellOpen] = useState(false);
   const bellRef = useRef(null);
 
-  // Push notification permission status
-  const [pushPermission, setPushPermission] = useState(() =>
-    'Notification' in window ? Notification.permission : 'unsupported'
-  );
+  // Push notification permission status (safe for all mobile environments)
+  const [pushPermission, setPushPermission] = useState(() => {
+    try {
+      return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
+    } catch (e) {
+      return 'unsupported';
+    }
+  });
   const [swRegistration, setSwRegistration] = useState(null);
 
   // Settings Module State
@@ -769,11 +783,22 @@ export default function App() {
           // Dashboard notification
           if (r.dashboardNotification && !r.dashboardSeenAt) {
             changed = true;
-            if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification('🔔 Academic Dashboard', {
-                body: `${r.title} — scheduled for ${formatReminderDateTime(r.date, r.time)}`,
-                icon: '/favicon.svg'
-              });
+            try {
+              if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+                if (swRegistration && swRegistration.showNotification) {
+                  swRegistration.showNotification('🔔 Academic Dashboard', {
+                    body: `${r.title} — scheduled for ${formatReminderDateTime(r.date, r.time)}`,
+                    icon: '/favicon.svg'
+                  });
+                } else {
+                  new Notification('🔔 Academic Dashboard', {
+                    body: `${r.title} — scheduled for ${formatReminderDateTime(r.date, r.time)}`,
+                    icon: '/favicon.svg'
+                  });
+                }
+              }
+            } catch (nErr) {
+              console.warn('Notification display bypassed:', nErr);
             }
             updates.dashboardSeenAt = now.toISOString();
           }
@@ -1575,50 +1600,52 @@ export default function App() {
     setSettingsStatus({ type: 'success', message: 'Password updated successfully! Please use your new password for future logins.' });
   };
 
+  if (!isLoggedIn) {
+    return (
+      <div className="login-overlay">
+        <form className="login-card" onSubmit={handleLogin}>
+          <div className="login-logo">🎓</div>
+          <h2 className="login-title">Academic ERP Portal</h2>
+          <p className="login-subtitle">Administrator Authentication Required</p>
+
+          {loginError && (
+            <div className="alert-banner error" style={{ marginBottom: '1rem', padding: '0.75rem 1rem', fontSize: '0.85rem' }}>
+              ⚠️ {loginError}
+            </div>
+          )}
+
+          <div className="form-group">
+            <label htmlFor="username">Username</label>
+            <input
+              id="username"
+              className="text-input"
+              type="text"
+              value={usernameInput}
+              onChange={(e) => setUsernameInput(e.target.value)}
+              placeholder="Enter admin username"
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+            <input
+              id="password"
+              className="text-input"
+              type="password"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              placeholder="Enter password"
+              required
+            />
+          </div>
+          <button className="btn btn-primary login-btn" type="submit">Log In</button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
-      {/* Login Screen Overlay */}
-      {!isLoggedIn && (
-        <div className="login-overlay">
-          <form className="login-card" onSubmit={handleLogin}>
-            <div className="login-logo">🎓</div>
-            <h2 className="login-title">Academic ERP Portal</h2>
-            <p className="login-subtitle">Administrator Authentication Required</p>
-
-            {loginError && (
-              <div className="alert-banner error" style={{ marginBottom: '1rem', padding: '0.75rem 1rem', fontSize: '0.85rem' }}>
-                ⚠️ {loginError}
-              </div>
-            )}
-
-            <div className="form-group">
-              <label htmlFor="username">Username</label>
-              <input
-                id="username"
-                className="text-input"
-                type="text"
-                value={usernameInput}
-                onChange={(e) => setUsernameInput(e.target.value)}
-                placeholder="Enter admin username"
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                className="text-input"
-                type="password"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="Enter password"
-                required
-              />
-            </div>
-            <button className="btn btn-primary login-btn" type="submit">Log In</button>
-          </form>
-        </div>
-      )}
 
       {/* ============================================================= */}
       {/* DELETE CONFIRMATION DIALOG */}
@@ -3564,7 +3591,7 @@ export default function App() {
                           <span>{priorityIcon(r.priority)}</span>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontWeight: 700, fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {r.time.split(':').reduce((h, m) => `${parseInt(h, 10) % 12 || 12}:${m} ${parseInt(h, 10) >= 12 ? 'PM' : 'AM'}`)} — {r.title}
+                              {formatTime12h(r.time)} — {r.title}
                             </div>
                           </div>
                         </div>
