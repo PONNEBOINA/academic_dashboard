@@ -35,6 +35,58 @@ function formatTime12h(timeStr) {
   return `${String(h).padStart(2, '0')}:${mm || '00'} ${ampm}`;
 }
 
+// Reliable notification dispatcher across mobile (Android Chrome / iOS PWA) and desktop
+async function showAppNotification(title, body, tag = 'hod-reminder') {
+  if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
+    return false;
+  }
+  const options = {
+    body: body || 'Scheduled reminder is due now.',
+    icon: '/favicon.svg',
+    badge: '/favicon.svg',
+    tag,
+    renotify: true,
+    data: '/',
+    vibrate: [200, 100, 200, 100, 200]
+  };
+
+  // 1. Try Service Worker (standard requirement on Android/iOS PWA)
+  if ('serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg && reg.showNotification) {
+        await reg.showNotification(title, options);
+        return true;
+      }
+    } catch (swErr) {
+      console.warn('SW notification fallback:', swErr);
+    }
+
+    // Try posting message to active Service Worker controller
+    try {
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SHOW_NOTIFICATION',
+          title,
+          options
+        });
+        return true;
+      }
+    } catch (msgErr) {
+      console.warn('SW message fallback:', msgErr);
+    }
+  }
+
+  // 2. Fallback for Desktop browsers that support the constructor
+  try {
+    new Notification(title, options);
+    return true;
+  } catch (e) {
+    console.warn('Desktop constructor bypassed:', e);
+  }
+  return false;
+}
+
 // Returns overdue string like "2h overdue" or null
 function getOverdue(dateStr, timeStr) {
   if (!dateStr || !timeStr) return null;
@@ -783,23 +835,11 @@ export default function App() {
           // Dashboard notification
           if (r.dashboardNotification && !r.dashboardSeenAt) {
             changed = true;
-            try {
-              if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-                if (swRegistration && swRegistration.showNotification) {
-                  swRegistration.showNotification('🔔 Academic Dashboard', {
-                    body: `${r.title} — scheduled for ${formatReminderDateTime(r.date, r.time)}`,
-                    icon: '/favicon.svg'
-                  });
-                } else {
-                  new Notification('🔔 Academic Dashboard', {
-                    body: `${r.title} — scheduled for ${formatReminderDateTime(r.date, r.time)}`,
-                    icon: '/favicon.svg'
-                  });
-                }
-              }
-            } catch (nErr) {
-              console.warn('Notification display bypassed:', nErr);
-            }
+            showAppNotification(
+              '🔔 Academic Dashboard',
+              `${r.title} — scheduled for ${formatReminderDateTime(r.date, r.time)}`,
+              `rem_${r.id}`
+            );
             updates.dashboardSeenAt = now.toISOString();
           }
 
@@ -965,9 +1005,9 @@ export default function App() {
   };
 
   const enablePushNotifications = async () => {
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
       setPushPermission('unsupported');
-      alert('Mobile push notifications are not supported on this browser.');
+      alert('Mobile notifications are not supported on this browser.');
       return;
     }
     try {
@@ -975,30 +1015,23 @@ export default function App() {
       setPushPermission(permission);
 
       if (permission === 'granted') {
-        let reg = swRegistration;
-        if (!reg) {
-          reg = await navigator.serviceWorker.register('/sw.js');
-          setSwRegistration(reg);
-        }
-
-        let sub = await reg.pushManager.getSubscription();
-        if (!sub) {
+        if ('serviceWorker' in navigator) {
           try {
-            sub = await reg.pushManager.subscribe({ userVisibleOnly: true });
+            const reg = await navigator.serviceWorker.register('/sw.js');
+            setSwRegistration(reg);
+            await navigator.serviceWorker.ready;
           } catch (e) {
-            console.log('Push subscription registration completed locally:', e);
+            console.warn('SW registration:', e);
           }
         }
 
-        if (sub && BACKEND_URL) {
-          try {
-            await fetch(`${BACKEND_URL}/api/subscribe`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(sub)
-            });
-          } catch (e) {}
-        }
+        // Send instant test notification so the user sees sound & banner immediately
+        setTimeout(() => {
+          showAppNotification(
+            '🔔 Notifications Enabled!',
+            'Academic ERP will now deliver your scheduled reminder alerts to this device.'
+          );
+        }, 400);
       }
     } catch (e) {
       console.error('Error enabling push notifications:', e);
@@ -3620,7 +3653,17 @@ export default function App() {
                 <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                   {/* Push Notification Toggle */}
                   {pushPermission === 'granted' ? (
-                    <span className="badge badge-present" style={{ padding: '0.5rem 0.9rem', fontSize: '0.8rem' }}>🔔 Notifications Enabled</span>
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span className="badge badge-present" style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem' }}>🔔 Notifications Enabled</span>
+                      <button
+                        className="btn btn-outline"
+                        onClick={() => showAppNotification('🔔 Test Alert', 'Notifications and sound alerts are working smoothly on your mobile device!')}
+                        style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+                        title="Send a quick test notification to check device alerts"
+                      >
+                        ⚡ Send Test Alert
+                      </button>
+                    </div>
                   ) : pushPermission === 'denied' ? (
                     <span className="badge badge-absent" style={{ padding: '0.5rem 0.9rem', fontSize: '0.8rem' }}>🔕 Notifications Blocked — Enable in browser settings</span>
                   ) : pushPermission === 'unsupported' ? (

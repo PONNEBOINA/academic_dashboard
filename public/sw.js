@@ -8,6 +8,26 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+// Handle direct messages from client application
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    const { title, options } = event.data;
+    const notificationOptions = {
+      body: options?.body || 'Your scheduled reminder is due now.',
+      icon: '/favicon.svg',
+      badge: '/favicon.svg',
+      tag: options?.tag || 'hod-reminder',
+      renotify: true,
+      data: options?.data || '/',
+      vibrate: [200, 100, 200, 100, 200],
+      ...options
+    };
+    event.waitUntil(
+      self.registration.showNotification(title || '🔔 Academic Dashboard', notificationOptions)
+    );
+  }
+});
+
 // Handle incoming Web Push notifications
 self.addEventListener('push', (event) => {
   let data = { title: '🔔 Academic Dashboard', body: 'Your scheduled reminder is due now.' };
