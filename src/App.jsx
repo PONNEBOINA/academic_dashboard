@@ -861,10 +861,21 @@ export default function App() {
     ? upcomingReminders
     : [...reminders].sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
 
-  // Unread dashboard notifications from MongoDB
-  const unreadBellCount = dbNotifications.filter(n => !n.read).length;
+  // Build a set of completed reminder IDs so we can hide their notifications
+  const completedReminderIds = new Set(
+    reminders.filter(r => r.completed).map(r => (r._id || r.id)?.toString())
+  );
 
-  const bellNotifications = [...dbNotifications]
+  // Active notifications: exclude those linked to a completed reminder
+  const activeNotifications = dbNotifications.filter(n => {
+    if (!n.reminderId) return !n.read; // generic notification: show if unread
+    return !completedReminderIds.has(n.reminderId?.toString());
+  });
+
+  // Unread badge count from active notifications only
+  const unreadBellCount = activeNotifications.filter(n => !n.read).length;
+
+  const bellNotifications = [...activeNotifications]
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
   // =====================================================================
@@ -945,11 +956,43 @@ export default function App() {
   const toggleReminderComplete = async (id) => {
     const reminder = reminders.find(r => (r._id || r.id) === id);
     if (!reminder) return;
+    const nextCompleted = !reminder.completed;
     try {
-      await api.updateReminder(id, { completed: !reminder.completed });
-      await fetchReminders();
+      // Optimistic update so UI reflects immediately
+      setReminders(prev => prev.map(r => ((r._id || r.id) === id ? { ...r, completed: nextCompleted } : r)));
+      await api.updateReminder(id, { completed: nextCompleted });
+
+      // If marking as completed, also mark related notifications read in DB
+      if (nextCompleted) {
+        const related = dbNotifications.filter(n => n.reminderId?.toString() === id.toString());
+        if (related.length > 0) {
+          await api.markNotificationsRead(related.map(n => n._id || n.id));
+        }
+      }
+      // Re-fetch to ensure 100% database synchronization
+      await Promise.all([fetchReminders(), fetchNotifications()]);
     } catch (err) {
       console.error('Toggle complete error:', err);
+    }
+  };
+
+  const handleCompleteNotification = async (n) => {
+    const notifId = n._id || n.id;
+    const reminderId = n.reminderId;
+    try {
+      // Optimistically mark reminder as completed in local state
+      if (reminderId) {
+        setReminders(prev => prev.map(r => ((r._id || r.id)?.toString() === reminderId.toString() ? { ...r, completed: true } : r)));
+        await api.updateReminder(reminderId, { completed: true });
+      }
+      // Optimistically mark notification as read in local state
+      setDbNotifications(prev => prev.map(item => ((item._id || item.id) === notifId ? { ...item, read: true } : item)));
+      await api.markNotificationsRead([notifId]);
+
+      // Re-fetch to ensure full database synchronization
+      await Promise.all([fetchReminders(), fetchNotifications()]);
+    } catch (err) {
+      console.error('Error completing reminder from notification:', err);
     }
   };
 
@@ -2264,29 +2307,31 @@ export default function App() {
               {bellOpen && (
                 <div className="bell-dropdown">
                   <div className="bell-dropdown-header">
-                    <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                    <span className="bell-header-title">
                       🔔 Notifications {unreadBellCount > 0 ? `(${unreadBellCount} new)` : ''}
                     </span>
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
                       {unreadBellCount > 0 && (
                         <button
+                          className="bell-mark-all-btn"
                           onClick={markBellSeen}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontWeight: 700, fontSize: '0.75rem' }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.75rem', padding: 0 }}
                         >
                           Mark all read
                         </button>
                       )}
                       <button
+                        className="bell-header-link"
                         onClick={() => { setActiveModule('reminders'); setBellOpen(false); }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.75rem' }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.75rem', padding: 0 }}
                       >
                         View Reminders
                       </button>
                     </div>
                   </div>
                   {bellNotifications.length === 0 ? (
-                    <div style={{ padding: '1.25rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                      ✓ No notifications
+                    <div className="bell-empty-text" style={{ padding: '1.5rem 1rem', textAlign: 'center', fontSize: '0.85rem' }}>
+                      ✓ No active notifications
                     </div>
                   ) : (
                     <ul className="bell-dropdown-list">
@@ -2306,18 +2351,40 @@ export default function App() {
                             }}
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                              <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                              <span className="notif-title" style={{ fontSize: '0.85rem' }}>
                                 {priorityIcon(n.priority || 'Medium')} {n.title}
                               </span>
                               {!n.read && (
                                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)', flexShrink: 0, marginTop: '4px' }} title="Unread"></span>
                               )}
                             </div>
-                            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '3px 0 0 0', lineHeight: 1.35 }}>
+                            <p className="notif-message" style={{ fontSize: '0.78rem', margin: '3px 0 0 0', lineHeight: 1.35 }}>
                               {n.message}
                             </p>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                              {n.date && n.time ? formatReminderDateTime(n.date, n.time) : (n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                              <div className="notif-meta" style={{ fontSize: '0.7rem' }}>
+                                {n.date && n.time ? formatReminderDateTime(n.date, n.time) : (n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')}
+                              </div>
+                              <button
+                                className="notif-done-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCompleteNotification(n);
+                                }}
+                                style={{
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: '6px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                }}
+                                title="Mark this reminder as complete and remove from notifications"
+                              >
+                                ✓ Done
+                              </button>
                             </div>
                           </li>
                         );
@@ -3827,94 +3894,88 @@ export default function App() {
           {/* ============================================================= */}
           {activeModule === 'reminders' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Compact Metrics Bar */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
-                <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '0.85rem 1.15rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Upcoming Pending</div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: '2px', color: 'var(--text-main)' }}>{upcomingReminders.length}</div>
-                  </div>
-                  <span style={{ fontSize: '1.5rem', opacity: 0.85 }}>📌</span>
-                </div>
 
-                <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '0.85rem 1.15rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Due Today</div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: '2px', color: todaysReminders.length > 0 ? 'var(--primary)' : 'var(--text-main)' }}>{todaysReminders.length}</div>
+              {/* Priority Cards: High & Medium Priority side-by-side on desktop/tablet, stacked on mobile */}
+              <div className="reminders-priority-grid">
+                {/* High Priority Card */}
+                <div className="reminders-priority-card high-priority-card">
+                  <div className="reminders-priority-top">
+                    <span className="priority-pill high">🔴 High Priority</span>
+                    <span className="priority-count-badge">
+                      {upcomingReminders.filter(r => r.priority === 'High').length} pending
+                    </span>
                   </div>
-                  <span style={{ fontSize: '1.5rem', opacity: 0.85 }}>📅</span>
-                </div>
-
-                <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '0.85rem 1.15rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>High Priority</div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: '2px', color: 'var(--danger)' }}>
+                  <div className="reminders-priority-detail">
+                    <span className="priority-count-number">
                       {upcomingReminders.filter(r => r.priority === 'High').length}
-                    </div>
+                    </span>
+                    <span className="priority-count-label">High Priority Reminders</span>
                   </div>
-                  <span style={{ fontSize: '1.5rem', opacity: 0.85 }}>🔴</span>
+                </div>
+
+                {/* Medium Priority Card */}
+                <div className="reminders-priority-card medium-priority-card">
+                  <div className="reminders-priority-top">
+                    <span className="priority-pill medium">🟡 Medium Priority</span>
+                    <span className="priority-count-badge">
+                      {upcomingReminders.filter(r => r.priority === 'Medium').length} pending
+                    </span>
+                  </div>
+                  <div className="reminders-priority-detail">
+                    <span className="priority-count-number">
+                      {upcomingReminders.filter(r => r.priority === 'Medium').length}
+                    </span>
+                    <span className="priority-count-label">Medium Priority Reminders</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Sub-Tabs & Action Bar */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '0.75rem 1rem' }}>
-                {/* View Tabs: Only Upcoming and All */}
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
+              {/* Action Toolbar: Tabs + Notification status + Add Reminder button */}
+              <div className="reminders-toolbar">
+                {/* View Tabs */}
+                <div className="reminders-toolbar-tabs">
                   <button
                     className={`sub-tab-btn ${reminderFilter === 'Upcoming' ? 'active' : ''}`}
                     onClick={() => setReminderFilter('Upcoming')}
-                    style={{ padding: '0.45rem 1rem', fontSize: '0.85rem', fontWeight: 600 }}
                   >
                     📌 Upcoming ({upcomingReminders.length})
                   </button>
                   <button
                     className={`sub-tab-btn ${reminderFilter === 'All' ? 'active' : ''}`}
                     onClick={() => setReminderFilter('All')}
-                    style={{ padding: '0.45rem 1rem', fontSize: '0.85rem', fontWeight: 600 }}
                   >
                     📋 All ({reminders.length})
                   </button>
                 </div>
 
-                {/* Status + Add & Test Buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                {/* Right side: notification status + add reminder */}
+                <div className="reminders-toolbar-actions">
                   {pushPermission === 'granted' ? (
-                    <>
-                      <span className="badge badge-present" style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem' }}>
-                        🔔 Notifications Active
-                      </span>
-                      <button
-                        className="btn btn-outline"
-                        onClick={handleSendTestAlert}
-                        disabled={testingAlert}
-                        style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem', fontWeight: 600 }}
-                        title="Send a live Web Push test notification from the server to your mobile device"
-                      >
-                        {testingAlert ? '⚡ Dispatching...' : '⚡ Send Test Alert'}
-                      </button>
-                    </>
+                    <span className="badge badge-present" style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem', whiteSpace: 'nowrap' }}>
+                      🔔 Notifications Active
+                    </span>
                   ) : pushPermission === 'denied' ? (
-                    <span className="badge badge-absent" style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem' }}>
-                      🔕 Blocked in Browser
+                    <span className="badge badge-absent" style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem', whiteSpace: 'nowrap' }}>
+                      🔕 Notifications Blocked
                     </span>
                   ) : pushPermission === 'unsupported' ? (
-                    <span className="badge badge-compoff" style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem' }}>
-                      🔕 Web Push Unsupported
+                    <span className="badge badge-compoff" style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem', whiteSpace: 'nowrap' }}>
+                      🔕 Push Unsupported
                     </span>
                   ) : (
                     <button
                       className="btn btn-outline"
                       onClick={enablePushNotifications}
-                      style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem', fontWeight: 600 }}
+                      style={{ fontSize: '0.8rem', padding: '0.4rem 0.85rem', fontWeight: 600, whiteSpace: 'nowrap' }}
                     >
-                      🔔 Enable Mobile Notifications
+                      🔔 Enable Notifications
                     </button>
                   )}
 
                   <button
-                    className="btn btn-primary"
+                    className="btn btn-primary add-reminder-btn"
                     onClick={openAddModal}
-                    style={{ fontSize: '0.85rem', padding: '0.45rem 1rem', fontWeight: 700 }}
+                    style={{ fontSize: '0.85rem', padding: '0.45rem 1.15rem', fontWeight: 700, whiteSpace: 'nowrap' }}
                   >
                     + Add Reminder
                   </button>
@@ -3923,105 +3984,93 @@ export default function App() {
 
               {/* Reminders Cards Grid */}
               {displayedReminders.length === 0 ? (
-                <div className="no-attention-box" style={{ padding: '2.5rem 1rem', textAlign: 'center', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '10px' }}>
-                  <div style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>✓</div>
-                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-main)' }}>No reminders in &ldquo;{reminderFilter}&rdquo;</div>
-                  <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                    Click &ldquo;+ Add Reminder&rdquo; to schedule a reminder with sound, dashboard alert, and mobile push.
+                <div style={{ padding: '2.5rem 1rem', textAlign: 'center', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px' }}>
+                  <div style={{ fontSize: '1.5rem', marginBottom: '0.4rem' }}>✓</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>No reminders in &ldquo;{reminderFilter}&rdquo;</div>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem', maxWidth: '340px', margin: '0.35rem auto 0' }}>
+                    Click &ldquo;+ Add Reminder&rdquo; to schedule a reminder with dashboard alert and mobile push.
                   </p>
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+                <div className="reminders-cards-grid">
                   {displayedReminders.map(r => {
                     const reminderKey = r._id || r.id;
                     const overdue = !r.completed ? getOverdue(r.date, r.time) : null;
                     return (
                       <div
                         key={reminderKey}
-                        style={{
-                          background: 'var(--card-bg)',
-                          border: `1px solid ${r.completed ? 'var(--border)' : r.priority === 'High' ? 'rgba(239, 68, 68, 0.3)' : 'var(--card-border)'}`,
-                          borderRadius: '10px',
-                          padding: '1rem',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          justifyContent: 'space-between',
-                          gap: '0.75rem',
-                          opacity: r.completed ? 0.65 : 1,
-                        }}
+                        className={`reminder-card-item${r.completed ? ' is-completed' : ''}`}
                       >
-                        <div>
-                          {/* Card Header: Priority & Overdue / Completed */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                            <span className={`badge ${priorityBadgeClass(r.priority)}`} style={{ fontSize: '0.72rem' }}>
-                              {priorityIcon(r.priority)} {r.priority}
-                            </span>
-                            {r.completed ? (
-                              <span className="badge badge-wfh" style={{ fontSize: '0.7rem' }}>✓ Completed</span>
-                            ) : overdue ? (
-                              <span className="badge badge-overdue" style={{ fontSize: '0.7rem' }}>⚠ {overdue}</span>
-                            ) : null}
-                          </div>
-
-                          {/* Title */}
-                          <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.35rem 0', color: 'var(--text-main)', textDecoration: r.completed ? 'line-through' : 'none', lineHeight: 1.35 }}>
-                            {r.title}
-                          </h4>
-
-                          {/* Description */}
-                          {r.description && (
-                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 0.5rem 0', lineHeight: 1.4 }}>
-                              {r.description}
-                            </p>
-                          )}
+                        {/* Top row: priority badge + status badge */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
+                          <span className={`badge ${priorityBadgeClass(r.priority)}`} style={{ fontSize: '0.7rem' }}>
+                            {priorityIcon(r.priority)} {r.priority}
+                          </span>
+                          {r.completed ? (
+                            <span className="badge badge-wfh" style={{ fontSize: '0.7rem' }}>✓ Done</span>
+                          ) : overdue ? (
+                            <span className="badge badge-overdue" style={{ fontSize: '0.7rem' }}>⚠ {overdue}</span>
+                          ) : null}
                         </div>
 
-                        <div>
-                          {/* Scheduled Date & Time */}
-                          <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500 }}>
-                            <span>📅 {formatReminderDateTime(r.date, r.time)}</span>
-                          </div>
+                        {/* Title */}
+                        <h4 style={{ fontSize: '0.93rem', fontWeight: 700, margin: '0 0 0.3rem', color: 'var(--text-main)', textDecoration: r.completed ? 'line-through' : 'none', lineHeight: 1.35 }}>
+                          {r.title}
+                        </h4>
 
-                          {/* Channel indicators */}
-                          <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                        {/* Description */}
+                        {r.description && (
+                          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 0.4rem', lineHeight: 1.4 }}>
+                            {r.description}
+                          </p>
+                        )}
+
+                        {/* Date & Time */}
+                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '0.4rem' }}>
+                          📅 {formatReminderDateTime(r.date, r.time)}
+                        </div>
+
+                        {/* Notification channel tags */}
+                        {(r.dashboardNotification || r.pushNotification) && (
+                          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
                             {r.dashboardNotification && (
-                              <span className="badge badge-neutral" style={{ fontSize: '0.68rem', padding: '0.2rem 0.5rem' }}>
+                              <span style={{ fontSize: '0.67rem', padding: '0.15rem 0.45rem', borderRadius: '999px', background: 'rgba(99,155,255,0.12)', color: 'var(--primary)', border: '1px solid rgba(99,155,255,0.25)', fontWeight: 600 }}>
                                 🖥 Dashboard{r.dashboardSeenAt ? ' ✓' : ''}
                               </span>
                             )}
                             {r.pushNotification && (
-                              <span className="badge badge-neutral" style={{ fontSize: '0.68rem', padding: '0.2rem 0.5rem' }}>
+                              <span style={{ fontSize: '0.67rem', padding: '0.15rem 0.45rem', borderRadius: '999px', background: 'rgba(245,158,11,0.1)', color: 'var(--warning)', border: '1px solid rgba(245,158,11,0.25)', fontWeight: 600 }}>
                                 🔔 Push{r.pushSentAt ? ' ✓' : ''}
                               </span>
                             )}
                           </div>
+                        )}
 
-                          {/* Actions */}
-                          <div style={{ display: 'flex', gap: '0.5rem', borderTop: '1px solid var(--border)', paddingTop: '0.65rem' }}>
-                            <button
-                              className={`btn ${r.completed ? 'btn-outline' : 'btn-primary'}`}
-                              style={{ flex: 1, fontSize: '0.78rem', padding: '0.4rem 0.6rem', fontWeight: 600 }}
-                              onClick={() => toggleReminderComplete(reminderKey)}
-                            >
-                              {r.completed ? '↩ Pending' : '✓ Done'}
-                            </button>
-                            <button
-                              className="btn btn-outline"
-                              style={{ fontSize: '0.78rem', padding: '0.4rem 0.65rem' }}
-                              onClick={() => openEditModal(r)}
-                              title="Edit reminder"
-                            >
-                              ✏️
-                            </button>
-                            <button
-                              className="btn btn-outline"
-                              style={{ fontSize: '0.78rem', padding: '0.4rem 0.65rem', color: 'var(--danger)', borderColor: 'var(--danger)' }}
-                              onClick={() => confirmDeleteReminder(reminderKey)}
-                              title="Delete reminder"
-                            >
-                              🗑
-                            </button>
-                          </div>
+                        {/* Action buttons */}
+                        <div style={{ display: 'flex', gap: '0.45rem', paddingTop: '0.6rem', borderTop: '1px solid var(--border)' }}>
+                          <button
+                            className={`btn ${r.completed ? 'btn-outline' : 'btn-primary'}`}
+                            style={{ flex: 1, fontSize: '0.78rem', padding: '0.4rem 0.5rem', fontWeight: 600 }}
+                            onClick={() => toggleReminderComplete(reminderKey)}
+                          >
+                            {r.completed ? '↩ Undo' : '✓ Done'}
+                          </button>
+                          <button
+                            className="btn btn-outline"
+                            style={{ fontSize: '0.78rem', padding: '0.4rem 0.6rem' }}
+                            onClick={() => openEditModal(r)}
+                            title="Edit reminder"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            className="btn btn-outline"
+                            style={{ fontSize: '0.78rem', padding: '0.4rem 0.6rem', color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.45)' }}
+                            onClick={() => confirmDeleteReminder(reminderKey)}
+                            title="Delete reminder"
+                          >
+                            🗑
+                          </button>
                         </div>
                       </div>
                     );

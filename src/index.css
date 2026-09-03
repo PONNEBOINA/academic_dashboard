@@ -1377,57 +1377,7 @@ body {
   border: 2px solid var(--card-bg);
 }
 
-.bell-dropdown {
-  position: absolute;
-  right: 0;
-  top: 120%;
-  width: 320px;
-  background: var(--card-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--card-border);
-  border-radius: 16px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
-  z-index: 100;
-  overflow: hidden;
-  animation: drawerSlide 0.2s ease-out;
-}
 
-.bell-dropdown-header {
-  padding: 0.9rem 1.1rem;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: 700;
-  font-size: 0.85rem;
-}
-
-.bell-dropdown-list {
-  max-height: 280px;
-  overflow-y: auto;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.bell-dropdown-item {
-  padding: 0.8rem 1.1rem;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  cursor: pointer;
-  transition: background 0.2s ease;
-}
-
-.bell-dropdown-item:hover {
-  background: var(--table-row-hover);
-}
-
-.bell-dropdown-item.unread {
-  background: rgba(59, 130, 246, 0.08);
-}
 
 /* Priority & Overdue Badges */
 .badge-priority-high {
@@ -1644,25 +1594,22 @@ body {
   100% { transform: scale(1); }
 }
 
+/* Notification bell dropdown - solid opaque, no transparent/glass background */
 .bell-dropdown {
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  width: 320px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 16px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.25);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  z-index: 1000;
+  width: 340px;
+  max-width: 90vw;
+  border-radius: 14px;
+  z-index: 1100;
   overflow: hidden;
-  animation: dropdown-in 0.2s ease;
+  animation: dropdown-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes dropdown-in {
-  from { opacity: 0; transform: translateY(-8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .bell-dropdown-header {
@@ -1670,9 +1617,8 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 0.85rem 1rem;
-  border-bottom: 1px solid var(--border);
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
 .bell-dropdown-list {
@@ -1686,24 +1632,360 @@ body {
 .bell-dropdown-item {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
+  gap: 0.3rem;
+  padding: 0.8rem 1rem;
   cursor: pointer;
   transition: background 0.15s ease;
 }
 
 .bell-dropdown-item:last-child {
-  border-bottom: none;
+  border-bottom: none !important;
 }
 
-.bell-dropdown-item:hover {
-  background: var(--table-row-hover);
+/* ============================================================ */
+/* LIGHT MODE: Solid Dark/Black Notification Dropdown          */
+/* ============================================================ */
+:root:not([data-theme='dark']) .bell-dropdown,
+[data-theme='light'] .bell-dropdown {
+  background: #0f172a !important; /* Solid dark charcoal/black */
+  border: 1px solid #334155 !important;
+  box-shadow: 0 16px 40px -4px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: #f8fafc;
 }
 
-.bell-dropdown-item.unread {
-  background: rgba(99, 155, 255, 0.08);
-  border-left: 3px solid var(--primary);
+:root:not([data-theme='dark']) .bell-dropdown .bell-dropdown-header,
+[data-theme='light'] .bell-dropdown .bell-dropdown-header {
+  background: #090d16 !important;
+  border-bottom: 1px solid #1e293b !important;
+  color: #f8fafc !important;
+}
+
+:root:not([data-theme='dark']) .bell-dropdown .bell-header-title,
+[data-theme='light'] .bell-dropdown .bell-header-title {
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+:root:not([data-theme='dark']) .bell-dropdown .bell-header-link,
+[data-theme='light'] .bell-dropdown .bell-header-link {
+  color: #94a3b8 !important;
+}
+:root:not([data-theme='dark']) .bell-dropdown .bell-header-link:hover,
+[data-theme='light'] .bell-dropdown .bell-header-link:hover {
+  color: #ffffff !important;
+}
+
+:root:not([data-theme='dark']) .bell-dropdown .bell-mark-all-btn,
+[data-theme='light'] .bell-dropdown .bell-mark-all-btn {
+  color: #60a5fa !important;
+}
+
+:root:not([data-theme='dark']) .bell-dropdown .bell-dropdown-item,
+[data-theme='light'] .bell-dropdown .bell-dropdown-item {
+  background: #0f172a !important;
+  border-bottom: 1px solid #1e293b !important;
+  color: #f8fafc !important;
+}
+
+:root:not([data-theme='dark']) .bell-dropdown .bell-dropdown-item:hover,
+[data-theme='light'] .bell-dropdown .bell-dropdown-item:hover {
+  background: #1e293b !important;
+}
+
+:root:not([data-theme='dark']) .bell-dropdown .bell-dropdown-item.unread,
+[data-theme='light'] .bell-dropdown .bell-dropdown-item.unread {
+  background: #141f36 !important;
+  border-left: 3px solid #3b82f6 !important;
+}
+
+:root:not([data-theme='dark']) .bell-dropdown .notif-title,
+[data-theme='light'] .bell-dropdown .notif-title {
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+:root:not([data-theme='dark']) .bell-dropdown .notif-message,
+[data-theme='light'] .bell-dropdown .notif-message {
+  color: #cbd5e1 !important;
+}
+
+:root:not([data-theme='dark']) .bell-dropdown .notif-meta,
+[data-theme='light'] .bell-dropdown .notif-meta {
+  color: #94a3b8 !important;
+}
+
+:root:not([data-theme='dark']) .bell-dropdown .notif-done-btn,
+[data-theme='light'] .bell-dropdown .notif-done-btn {
+  background: rgba(59, 130, 246, 0.18) !important;
+  color: #93c5fd !important;
+  border: 1px solid rgba(59, 130, 246, 0.4) !important;
+}
+:root:not([data-theme='dark']) .bell-dropdown .notif-done-btn:hover,
+[data-theme='light'] .bell-dropdown .notif-done-btn:hover {
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+
+:root:not([data-theme='dark']) .bell-dropdown .bell-empty-text,
+[data-theme='light'] .bell-dropdown .bell-empty-text {
+  color: #94a3b8 !important;
+}
+
+/* ============================================================ */
+/* DARK MODE: Solid White/Light Notification Dropdown          */
+/* ============================================================ */
+[data-theme='dark'] .bell-dropdown {
+  background: #ffffff !important; /* Solid white/light */
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 16px 40px -4px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: #0f172a;
+}
+
+[data-theme='dark'] .bell-dropdown .bell-dropdown-header {
+  background: #f8fafc !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+[data-theme='dark'] .bell-dropdown .bell-header-title {
+  color: #0f172a !important;
+  font-weight: 700;
+}
+
+[data-theme='dark'] .bell-dropdown .bell-header-link {
+  color: #64748b !important;
+}
+[data-theme='dark'] .bell-dropdown .bell-header-link:hover {
+  color: #0f172a !important;
+}
+
+[data-theme='dark'] .bell-dropdown .bell-mark-all-btn {
+  color: #2563eb !important;
+}
+
+[data-theme='dark'] .bell-dropdown .bell-dropdown-item {
+  background: #ffffff !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+[data-theme='dark'] .bell-dropdown .bell-dropdown-item:hover {
+  background: #f8fafc !important;
+}
+
+[data-theme='dark'] .bell-dropdown .bell-dropdown-item.unread {
+  background: #eff6ff !important;
+  border-left: 3px solid #2563eb !important;
+}
+
+[data-theme='dark'] .bell-dropdown .notif-title {
+  color: #0f172a !important;
+  font-weight: 700;
+}
+
+[data-theme='dark'] .bell-dropdown .notif-message {
+  color: #334155 !important;
+}
+
+[data-theme='dark'] .bell-dropdown .notif-meta {
+  color: #64748b !important;
+}
+
+[data-theme='dark'] .bell-dropdown .notif-done-btn {
+  background: rgba(37, 99, 235, 0.08) !important;
+  color: #2563eb !important;
+  border: 1px solid rgba(37, 99, 235, 0.25) !important;
+}
+[data-theme='dark'] .bell-dropdown .notif-done-btn:hover {
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .bell-dropdown .bell-empty-text {
+  color: #64748b !important;
+}
+
+/* ============================================================ */
+/* NOTES & REMINDERS - PRIORITY CARDS & TOOLBAR                 */
+/* ============================================================ */
+
+.reminders-priority-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.reminders-priority-card {
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+
+.reminders-priority-card.high-priority-card {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1.5px solid rgba(239, 68, 68, 0.35);
+}
+
+.reminders-priority-card.medium-priority-card {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1.5px solid rgba(245, 158, 11, 0.35);
+}
+
+.reminders-priority-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.priority-pill {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.priority-pill.high {
+  color: var(--danger);
+}
+
+.priority-pill.medium {
+  color: var(--warning);
+}
+
+.priority-count-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.high-priority-card .priority-count-badge {
+  background: rgba(239, 68, 68, 0.18);
+  color: var(--danger);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.medium-priority-card .priority-count-badge {
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--warning);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.reminders-priority-detail {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.priority-count-number {
+  font-size: 1.8rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.high-priority-card .priority-count-number {
+  color: var(--danger);
+}
+
+.medium-priority-card .priority-count-number {
+  color: var(--warning);
+}
+
+.priority-count-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Toolbar: Sub-tabs + Status badge + Add button */
+.reminders-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+}
+
+.reminders-toolbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.reminders-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.reminders-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.reminder-card-item {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.75rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.reminder-card-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.reminder-card-item.is-completed {
+  opacity: 0.65;
+  border-style: dashed;
+}
+
+@media (max-width: 639px) {
+  .reminders-priority-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .reminders-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0.75rem;
+  }
+  .reminders-toolbar-tabs {
+    width: 100%;
+  }
+  .reminders-toolbar-tabs .sub-tab-btn {
+    flex: 1;
+    text-align: center;
+  }
+  .reminders-toolbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .reminders-toolbar-actions .add-reminder-btn {
+    flex: 1;
+  }
+  .reminders-cards-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ============================================================ */
