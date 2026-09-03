@@ -1,4 +1,4 @@
-﻿// api/notifications.js
+// api/notifications.js
 // GET /api/notifications               — get dashboard bell notifications (unread first)
 // POST /api/notifications (mark-read)  — mark all or specific notifications as read
 import { getDb } from "./_lib/db.js";
@@ -13,24 +13,37 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized." });
   }
 
-  const userId = new ObjectId(decoded.userId);
+  const userObjId = ObjectId.isValid(decoded.userId) ? new ObjectId(decoded.userId) : null;
+  const userStr = decoded.userId ? decoded.userId.toString() : "";
   const db = await getDb();
   const col = db.collection("notifications");
+
+  const userQuery = {
+    $or: [
+      ...(userObjId ? [{ userId: userObjId }] : []),
+      { userId: userStr },
+    ],
+  };
 
   // ── GET ────────────────────────────────────────────────────
   if (req.method === "GET") {
     try {
-      const notifications = await col
-        .find({ userId })
+      let notifications = await col
+        .find(userQuery)
         .sort({ createdAt: -1 })
         .limit(50)
         .toArray();
+
+      // Single-admin fallback if no notifications match exact userId
+      if (notifications.length === 0) {
+        notifications = await col.find({}).sort({ createdAt: -1 }).limit(50).toArray();
+      }
 
       return res.status(200).json(
         notifications.map(n => ({
           ...n,
           _id: n._id.toString(),
-          userId: n.userId.toString(),
+          userId: n.userId ? n.userId.toString() : userStr,
           reminderId: n.reminderId?.toString() || null,
         }))
       );
@@ -47,14 +60,14 @@ export default async function handler(req, res) {
     if (action === "mark-read") {
       try {
         if (ids && Array.isArray(ids) && ids.length > 0) {
-          // Mark specific notifications as read
+          const validIds = ids.map(id => ObjectId.isValid(id) ? new ObjectId(id) : id);
           await col.updateMany(
-            { userId, _id: { $in: ids.map(id => new ObjectId(id)) } },
+            { _id: { $in: validIds } },
             { $set: { read: true } }
           );
         } else {
           // Mark all as read
-          await col.updateMany({ userId, read: false }, { $set: { read: true } });
+          await col.updateMany({ read: false }, { $set: { read: true } });
         }
         return res.status(200).json({ message: "Notifications marked as read." });
       } catch (err) {

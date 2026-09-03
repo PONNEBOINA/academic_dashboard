@@ -1,4 +1,4 @@
-﻿// src/api.js
+// src/api.js
 // Frontend API client — all communication with /api/* routes.
 // JWT is stored in localStorage['hod_token'].
 
@@ -110,6 +110,13 @@ export async function unregisterDevice(endpoint) {
   });
 }
 
+export async function sendTestPush() {
+  return request("/api/devices", {
+    method: "POST",
+    body: JSON.stringify({ action: "test-push" }),
+  });
+}
+
 // ── NOTIFICATIONS (Dashboard Bell) ───────────────────────────────────────
 
 export async function getNotifications() {
@@ -125,7 +132,31 @@ export async function markNotificationsRead(ids) {
 
 // ── VAPID Public Key (for SW push subscription) ───────────────────────────
 
-export function getVapidPublicKey() {
-  // Exposed via Vite env (safe — public key is intentionally public)
-  return import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
+let cachedVapidKey = null;
+
+export async function getVapidPublicKey() {
+  if (cachedVapidKey) return cachedVapidKey;
+
+  // 1. Check Vite env variable (if baked into build)
+  const envKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+  if (envKey && envKey.trim()) {
+    cachedVapidKey = envKey.trim();
+    return cachedVapidKey;
+  }
+
+  // 2. Fetch from backend /api/devices
+  try {
+    const res = await fetch("/api/devices");
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.vapidPublicKey) {
+        cachedVapidKey = data.vapidPublicKey.trim();
+        return cachedVapidKey;
+      }
+    }
+  } catch (err) {
+    console.warn("[API] Could not fetch VAPID public key from /api/devices:", err);
+  }
+
+  return "";
 }

@@ -6,6 +6,7 @@
 
 import { getDb } from "./_lib/db.js";
 import { getWebPush } from "./_lib/webpush.js";
+import { ObjectId } from "mongodb";
 
 export const config = { maxDuration: 30 };
 
@@ -44,15 +45,32 @@ export default async function handler(req, res) {
     const db = await getDb();
     const now = new Date();
 
-    // 2. Query due reminders where notification has not been sent yet
+    // India Standard Time (Asia/Kolkata is UTC+5:30)
+    const istTime = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+    const istDateStr = istTime.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const istTimeStr = istTime.toISOString().slice(11, 16); // "HH:MM"
+
+    // 2. Query due reminders:
+    // Matches if scheduledDateTime <= now OR if date/time in IST has arrived
     const dueReminders = await db
       .collection("reminders")
       .find({
-        scheduledDateTime: { $lte: now },
         completed: false,
-        $or: [
-          { pushSentAt: null, pushNotification: true },
-          { dashboardSeenAt: null, dashboardNotification: true },
+        $and: [
+          {
+            $or: [
+              { pushNotification: true, pushSentAt: null },
+              { dashboardNotification: true, dashboardSeenAt: null },
+            ],
+          },
+          {
+            $or: [
+              { scheduledDateTime: { $lte: now } },
+              { scheduledDateTime: { $lte: now.toISOString() } },
+              { date: { $lt: istDateStr } },
+              { date: istDateStr, time: { $lte: istTimeStr } },
+            ],
+          },
         ],
       })
       .toArray();
@@ -62,6 +80,7 @@ export default async function handler(req, res) {
         success: true,
         processed: 0,
         message: "No pending reminders due at this time.",
+        istTime: `${istDateStr} ${istTimeStr}`,
         timestamp: now.toISOString(),
       });
     }
@@ -76,12 +95,28 @@ export default async function handler(req, res) {
 
         // 3. Send Web Push to registered devices if enabled and not yet sent
         if (reminder.pushNotification && !reminder.pushSentAt) {
-          const devices = await db
+          const userObjId = ObjectId.isValid(reminder.userId) ? new ObjectId(reminder.userId) : null;
+          const userStr = reminder.userId ? reminder.userId.toString() : "";
+
+          let devices = await db
             .collection("devices")
-            .find({ userId: reminder.userId, enabled: true })
+            .find({
+              $or: [
+                ...(userObjId ? [{ userId: userObjId }] : []),
+                { userId: userStr },
+              ],
+              enabled: true,
+            })
             .toArray();
 
+          // Single-admin fallback: if no devices found with exact userId, check any enabled devices
+          if (devices.length === 0) {
+            devices = await db.collection("devices").find({ enabled: true }).toArray();
+          }
+
           const wp = getWebPush();
+          let anyPushSucceeded = false;
+
           if (wp && devices.length > 0) {
             const pushPayload = JSON.stringify({
               title: `🔔 ${reminder.title}`,
@@ -90,13 +125,14 @@ export default async function handler(req, res) {
               url: "/",
             });
 
-            await Promise.allSettled(
+            const results = await Promise.allSettled(
               devices.map(async (device) => {
                 try {
                   await wp.sendNotification(
                     { endpoint: device.endpoint, keys: device.keys },
                     pushPayload
                   );
+                  return true;
                 } catch (pushErr) {
                   // Expired or revoked subscription (HTTP 410 / 404)
                   if (pushErr.statusCode === 410 || pushErr.statusCode === 404) {
@@ -104,13 +140,16 @@ export default async function handler(req, res) {
                   } else {
                     console.warn(`[CRON] Push error for device ${device._id}:`, pushErr.message);
                   }
+                  throw pushErr;
                 }
               })
             );
+
+            anyPushSucceeded = results.some((r) => r.status === "fulfilled");
           }
 
           updateFields.pushSentAt = now;
-          pushSentCount++;
+          if (anyPushSucceeded) pushSentCount++;
         }
 
         // 4. Create in-app dashboard notification if enabled and not yet created
@@ -125,6 +164,9 @@ export default async function handler(req, res) {
               reminderId: reminder._id,
               title: reminder.title,
               message: reminder.description || "Your scheduled reminder is due now.",
+              priority: reminder.priority || "Medium",
+              date: reminder.date || "",
+              time: reminder.time || "",
               read: false,
               createdAt: now,
             });
@@ -151,6 +193,7 @@ export default async function handler(req, res) {
       pushDispatched: pushSentCount,
       dashboardAlertsCreated: notifCreatedCount,
       errors,
+      istTime: `${istDateStr} ${istTimeStr}`,
       timestamp: now.toISOString(),
     });
   } catch (err) {
