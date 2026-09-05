@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as api from './api.js';
+import * as leaveApi from './leaveApi.js';
+import EmployeePortal from './components/EmployeePortal.jsx';
+import HodLeaveManagement from './components/HodLeaveManagement.jsx';
 
 // =====================================================================
 // NOTES & REMINDERS — REBUILT HELPER FUNCTIONS
@@ -637,6 +640,18 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Portal State: 'hod' | 'employee'
+  const [activePortal, setActivePortal] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.location.hash === '#employee') return 'employee';
+      if (leaveApi.hasEmployeeToken() && !api.hasToken()) return 'employee';
+      return 'hod';
+    } catch {
+      return 'hod';
+    }
+  });
+  const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
 
   // ── API / Login State ─────────────────────────────────────────────────
   // Authentication is now token-based (JWT via /api/auth).
@@ -1770,10 +1785,38 @@ export default function App() {
     }
   };
 
+  if (activePortal === 'employee') {
+    return (
+      <EmployeePortal
+        onSwitchToHod={() => {
+          setActivePortal('hod');
+          try { window.location.hash = ''; } catch {}
+        }}
+        currentTheme={theme}
+        onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+      />
+    );
+  }
+
   if (!isLoggedIn) {
     return (
       <div className="login-overlay" data-theme={theme}>
         <form className="login-card" onSubmit={handleLogin}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.6rem', borderBottom: '1px solid var(--border)' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>🏛️ HOD Administration</span>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => {
+                setActivePortal('employee');
+                try { window.location.hash = 'employee'; } catch {}
+              }}
+              style={{ fontSize: '0.78rem', padding: '0.25rem 0.65rem', fontWeight: 700, color: 'var(--primary)' }}
+            >
+              👥 Employee Portal →
+            </button>
+          </div>
+
           <div className="login-logo">🎓</div>
           <h2 className="login-title">Academic ERP Portal</h2>
           <p className="login-subtitle">Administrator Authentication Required</p>
@@ -1811,6 +1854,20 @@ export default function App() {
           <button className="btn btn-primary login-btn" type="submit" disabled={loginLoading}>
             {loginLoading ? 'Authenticating...' : 'Log In'}
           </button>
+
+          <div style={{ textAlign: 'center', marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ width: '100%', fontSize: '0.85rem', fontWeight: 700 }}
+              onClick={() => {
+                setActivePortal('employee');
+                try { window.location.hash = 'employee'; } catch {}
+              }}
+            >
+              👥 Faculty / Employee Leave Portal
+            </button>
+          </div>
         </form>
       </div>
     );
@@ -2152,6 +2209,20 @@ export default function App() {
             </li>
             <li>
               <a
+                className={`nav-item ${activeModule === 'leaves' ? 'active' : ''}`}
+                href="#leave-requests"
+                onClick={(e) => { e.preventDefault(); setActiveModule('leaves'); setMobileMenuOpen(false); }}
+              >
+                <span>📋</span> <span>Leave Requests</span>
+                {pendingLeavesCount > 0 && (
+                  <span className="bell-unread-badge nav-badge" style={{ background: '#ef4444' }}>
+                    {pendingLeavesCount}
+                  </span>
+                )}
+              </a>
+            </li>
+            <li>
+              <a
                 className={`nav-item ${activeModule === 'settings' ? 'active' : ''}`}
                 href="#settings"
                 onClick={(e) => { e.preventDefault(); setActiveModule('settings'); setMobileMenuOpen(false); }}
@@ -2245,6 +2316,20 @@ export default function App() {
           </li>
           <li>
             <a
+              className={`nav-item ${activeModule === 'leaves' ? 'active' : ''}`}
+              href="#leave-requests"
+              onClick={(e) => { e.preventDefault(); setActiveModule('leaves'); }}
+            >
+              <span>📋</span> <span>Leave Requests</span>
+              {pendingLeavesCount > 0 && (
+                <span className="bell-unread-badge nav-badge" style={{ background: '#ef4444' }}>
+                  {pendingLeavesCount}
+                </span>
+              )}
+            </a>
+          </li>
+          <li>
+            <a
               className={`nav-item ${activeModule === 'settings' ? 'active' : ''}`}
               href="#settings"
               onClick={(e) => { e.preventDefault(); setActiveModule('settings'); }}
@@ -2288,6 +2373,7 @@ export default function App() {
             {activeModule === 'calendar' && 'Academic Calendar 2026-27'}
             {activeModule === 'settings' && 'Admin Settings & Security'}
             {activeModule === 'reminders' && '📝 Notes & Reminders'}
+            {activeModule === 'leaves' && '📋 Leave Request Management'}
           </h1>
 
           {/* User Controls */}
@@ -2404,6 +2490,17 @@ export default function App() {
               {theme === 'dark' ? '🌞' : '🌙'}
             </button>
             <span className="welcome-text desktop-welcome">Welcome, {currentUsername}</span>
+            <button
+              className="btn btn-outline"
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.65rem', fontWeight: 600 }}
+              onClick={() => {
+                setActivePortal('employee');
+                try { window.location.hash = 'employee'; } catch {}
+              }}
+              title="Open Employee Leave Portal"
+            >
+              👥 Employee Portal
+            </button>
             <button
               className="btn btn-outline desktop-logout-btn"
               onClick={handleLogout}
@@ -4079,8 +4176,18 @@ export default function App() {
               )}
             </div>
           )}
+
+          {/* ============================================================= */}
+          {/* MODULE 6: LEAVE REQUEST MANAGEMENT (HOD) */}
+          {/* ============================================================= */}
+          {activeModule === 'leaves' && (
+            <HodLeaveManagement
+              onPendingCountChange={(count) => setPendingLeavesCount(count)}
+            />
+          )}
         </section>
       </main>
     </div>
   );
 }
+
